@@ -13,7 +13,7 @@ class CharucoCalibration:
             squares: tuple(int, int) Number of squares in board (row, col)
             paper_size: tuple(int, int) Size of paper used (width, height) [mm]
             dpi: int Dots per inch for printer specs.
-            marker_size: tuple(int, int) Size of square and ArUco marker (square, marker) [px]
+            marker_size: tuple(int, int) Size of square and ArUco marker (square, marker) [mm]
             aruco_d: ArUco dictionary
 
         """
@@ -22,11 +22,31 @@ class CharucoCalibration:
         self.marker_size = marker_size
         self.dpi = dpi
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_d)
-        self.charuco_board = None
+
+        # Create charuco board
+        self.charuco_board = cv2.aruco.CharucoBoard(
+            size=self.squares,
+            squareLength=marker_size[0],  # mm
+            markerLength=marker_size[1],  # mm
+            dictionary=self.aruco_dict
+        )
+        print("New ChArUco board size:: {}".format(self.squares))
+        print('Dimension of board: {} mm'.format(self.marker_size[0]))
+        print('Dimension of marker: {} mm'.format(self.marker_size[1]))
+
+    # Create board to output
         self.board_image = self.create_charucoboard()
 
+        # Images variables
         self.images_left = np.array([])
         self.images_right = np.array([])
+
+        # Charuco image's parameters
+        self.references_ids = None  # variable to store IDs from first image.
+        self.all_corners = {'left': [], 'right': []}
+        self.all_ids = {'left': [], 'right': []}
+
+        # Calibration results
         self.camera_params = {
             'left': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([]),
                      'std_kk': np.array([]), 'std_kc': np.array([])},
@@ -37,63 +57,59 @@ class CharucoCalibration:
             'stereo': {'R': np.array([]), 'T': np.array([])}
         }
 
-        self.references_ids = None  # variable to store IDs from first image.
-        self.all_corners = {'left': [], 'right': []}
-        self.all_ids = {'left': [], 'right': []}
 
-    def create_charucoboard(self, margin_mm=10, save_as_pdf=True):
-        """
-        Function to create ChArUco board with margins and save it as PDF.
 
-        Args:
-            margin_mm: The margin size around the ChArUco board in millimeters.
-            save_as_pdf: Boolean, whether to save the image as a PDF.
+    def create_charucoboard(self, min_margin_mm=10, save_as_pdf=True):
+        # Calculate square and marker sizes in pixels based on intended mm and dpi
+        square_length_px = int(np.round(self.marker_size[0] / 25.4 * self.dpi))
+        marker_length_px = int(np.round(self.marker_size[1] / 25.4 * self.dpi))
 
-        Returns:
-            ChArUco board image with margins (height, width).
-        """
-        # Convert the square and marker size from millimeters to pixels
-        square_length_px = int(np.ceil(self.marker_size[0] / 25.4 * self.dpi))
-        marker_length_px = int(np.ceil(self.marker_size[1] / 25.4 * self.dpi))
-
-        # Create the ChArUco board with pixel-based dimensions
-        self.charuco_board = cv2.aruco.CharucoBoard(
+        # Create Charuco board
+        charuco_board = cv2.aruco.CharucoBoard(
             size=self.squares,
             squareLength=square_length_px,
             markerLength=marker_length_px,
             dictionary=self.aruco_dict
         )
 
-        # Convert paper dimensions from millimeters to pixels
-        paper_px = [int(np.ceil(a / 25.4 * self.dpi)) for a in self.paper_size]
+        # Total board size in pixels, leaving margins to be added around it
+        board_width_px = square_length_px * self.squares[0]
+        board_height_px = square_length_px * self.squares[1]
 
-        # Generate the ChArUco board image
-        board_image = self.charuco_board.generateImage(paper_px)
+        # Minimum margins in pixels, derived from mm
+        min_margin_px = int(np.round(min_margin_mm / 25.4 * self.dpi))
 
-        # Convert the margin size from millimeters to pixels
-        margin_px = int(np.ceil(margin_mm / 25.4 * self.dpi))
+        # Paper size in pixels at specified dpi
+        paper_width_px = int(np.round(self.paper_size[0] / 25.4 * self.dpi))
+        paper_height_px = int(np.round(self.paper_size[1] / 25.4 * self.dpi))
 
-        # Create a larger canvas with margins (white background)
-        board_with_margin = np.full(
-            (board_image.shape[0] + 2 * margin_px, board_image.shape[1] + 2 * margin_px),
-            255, dtype=np.uint8  # White background
-        )
+        # Calculate required margins to center board on paper
+        margin_x = max(min_margin_px, (paper_width_px - board_width_px) // 2)
+        margin_y = max(min_margin_px, (paper_height_px - board_height_px) // 2)
 
-        # Place the ChArUco board image in the center of the canvas
-        board_with_margin[margin_px:-margin_px, margin_px:-margin_px] = board_image
+        # Create a blank white canvas
+        canvas = np.full((paper_height_px, paper_width_px), 255, dtype=np.uint8)
+
+        # Draw ChArUco board on canvas with calculated margins
+        board_image = charuco_board.generateImage((board_width_px, board_height_px))
+        canvas[margin_y:margin_y + board_height_px, margin_x:margin_x + board_width_px] = board_image
 
         if save_as_pdf:
-            # Set the figure size to match the paper size exactly
-            fig = plt.figure(figsize=(self.paper_size[0] / 25.4, self.paper_size[1] / 25.4), dpi=self.dpi)
-            plt.imshow(board_with_margin, cmap="gray", interpolation="nearest")
+            # Convert paper size to inches for Matplotlib figsize
+            fig_width_in = self.paper_size[0] / 25.4
+            fig_height_in = self.paper_size[1] / 25.4
+
+            # Set up the figure size and save the PDF
+            fig = plt.figure(figsize=(fig_width_in, fig_height_in), dpi=self.dpi)
+            plt.imshow(canvas, cmap='gray', interpolation='nearest')
             plt.axis('off')
 
-            # Save the figure as a PDF without cropping or additional padding
-            plt.savefig("charuco_board.pdf")
+            # Save the PDF without extra padding or scaling
+            plt.savefig("charuco_board.pdf", format='pdf', dpi=self.dpi, bbox_inches='tight', pad_inches=0)
             plt.close(fig)
 
-        return board_with_margin
-
+        print('Resolution: {} pixel/mm'.format(round(canvas.shape[0] / self.paper_size[1], 2)))
+        return canvas
 
     def get_charuco_image(self):
         """
@@ -151,9 +167,9 @@ class CharucoCalibration:
             corners, ids, _ = cv2.aruco.detectMarkers(image=images[:, :, i], dictionary=self.aruco_dict)
             bgr_img = cv2.cvtColor(images[:, :, i], cv2.COLOR_GRAY2BGR)
             if ids is None:
-                print('No detected markers on image {} from {} camera'.format(i, camera))
                 continue
             elif len(ids) > 0:
+                print('No detected markers on image {} from {} camera'.format(i, camera))
                 response, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(markerCorners=corners,
                                                                                              markerIds=ids,
                                                                                              image=images[:, :, i],
@@ -161,7 +177,8 @@ class CharucoCalibration:
                 # If true will show detected markers and corners images
                 if visualize:
                     img_marker = cv2.aruco.drawDetectedMarkers(image=bgr_img, corners=corners, ids=ids)
-                    img_corners = cv2.aruco.drawDetectedCornersCharuco(image=img_marker.copy(), charucoCorners=charuco_corners,
+                    img_corners = cv2.aruco.drawDetectedCornersCharuco(image=img_marker.copy(),
+                                                                       charucoCorners=charuco_corners,
                                                                        charucoIds=charuco_ids)
                     concat = np.hstack((img_marker, img_corners))
                     cv2.namedWindow('Detected images', cv2.WINDOW_NORMAL)

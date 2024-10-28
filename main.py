@@ -3,7 +3,7 @@ import charuco_calibration
 
 
 def main():
-    charuco = charuco_calibration.CharucoCalibration(squares=(7, 8), paper_size=(297, 420), marker_size=(60, 40))
+    charuco = charuco_calibration.CharucoCalibration(squares=(2, 3), dpi=600, paper_size=(210, 297), marker_size=(60, 20))
 
     board_img = charuco.get_charuco_image()
 
@@ -15,7 +15,7 @@ def main():
     cv2.imshow('Charuco', board_img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-    # cv2.imwrite('charuco_a4_300dpi.png', board_img)
+    cv2.imwrite('charuco_a3_600dpi.png', board_img)
 
     # images_path = '/home/daniel/PycharmProjects/camera_calibration/images/20241021'
     # charuco.load_image(images_path=images_path, visualize=False)
