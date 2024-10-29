@@ -5,22 +5,20 @@ import matplotlib.pyplot as plt
 
 
 class CharucoCalibration:
-    def __init__(self, squares=(3, 4), paper_size=(210, 297), dpi=300, marker_size=(60, 40),
-                 aruco_d=cv2.aruco.DICT_5X5_250):
+    def __init__(self, squares=(8,6), marker_size=(60, 40),
+                 aruco_d=cv2.aruco.DICT_6X6_250):
         """
         Class to calibrate stereo cameras using ChArUco calibration board
         Parameters:
-            squares: tuple(int, int) Number of squares in board (row, col)
-            paper_size: tuple(int, int) Size of paper used (width, height) [mm]
-            dpi: int Dots per inch for printer specs.
-            marker_size: tuple(int, int) Size of square and ArUco marker (square, marker) [mm]
+            squares: Number of squares in board (row, col)
+            paper_size: Size of paper used (width, height) [mm]
+            dpi: Dots per inch for printer specs.
+            marker_size: Size of ChArUcos (square, marker) [mm]
             aruco_d: ArUco dictionary
 
         """
         self.squares = squares
-        self.paper_size = paper_size
         self.marker_size = marker_size
-        self.dpi = dpi
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_d)
 
         # Create charuco board
@@ -30,12 +28,13 @@ class CharucoCalibration:
             markerLength=marker_size[1],  # mm
             dictionary=self.aruco_dict
         )
-        print("New ChArUco board size:: {}".format(self.squares))
+        print("ChArUco board size:: {}".format(self.squares))
         print('Dimension of board: {} mm'.format(self.marker_size[0]))
         print('Dimension of marker: {} mm'.format(self.marker_size[1]))
+        print('Dict: {`}', format(str(self.aruco_dict)))
 
-    # Create board to output
-        self.board_image = self.create_charucoboard()
+        # Create board to output
+        self.board_image = None
 
         # Images variables
         self.images_left = np.array([])
@@ -57,12 +56,40 @@ class CharucoCalibration:
             'stereo': {'R': np.array([]), 'T': np.array([])}
         }
 
+    def create_charucoboard(self, min_margin_mm=10, paper_size=(210, 297), dpi=300,
+                            save_as_pdf=True):
+        """
+        Create ChArUco board
+        Parameters:
+            :param min_margin_mm: minimum margin in mm
+            :param paper_size: paper size (width, height)
+            :param dpi: dots per inch for printer specs.
+            :param orientation: 'landscape' or 'portrait' for board orientation
+            :param save_as_pdf: boolean to save image as pdf or not
+        Returns:
+           board: image of charuco board
+        """
+        print('{} squares: {} mm'.format(self.squares, tuple(sq*self.marker_size[0] for sq in self.squares)))
+        print('Paper size: {}'.format(paper_size))
+
+        if (paper_size[0] <= np.ceil(self.squares[0] * self.marker_size[0] + 2 * min_margin_mm)
+                or paper_size[1] <= np.ceil(self.squares[1] * self.marker_size[0] + 2 * min_margin_mm)):
+            print('Portrait dont fit, change to landscape')
+            paper_size = (paper_size[1], paper_size[0])
+            print('Paper size: {}'.format(paper_size))
+
+            if (paper_size[0] <= np.ceil(self.squares[0] * self.marker_size[0] + 2 * min_margin_mm)
+                    or paper_size[1] <= np.ceil(self.squares[1] * self.marker_size[0] + 2 * min_margin_mm)):
+                raise ValueError('Paper size too small')
+            else:
+                print('Landscape fit')
+        else:
+            print('Portrait fit')
 
 
-    def create_charucoboard(self, min_margin_mm=10, save_as_pdf=True):
-        # Calculate square and marker sizes in pixels based on intended mm and dpi
-        square_length_px = int(np.round(self.marker_size[0] / 25.4 * self.dpi))
-        marker_length_px = int(np.round(self.marker_size[1] / 25.4 * self.dpi))
+        # Calculate square and marker sizes in pixels
+        square_length_px = int(np.round(self.marker_size[0] / 25.4 * dpi))
+        marker_length_px = int(np.round(self.marker_size[1] / 25.4 * dpi))
 
         # Create Charuco board
         charuco_board = cv2.aruco.CharucoBoard(
@@ -72,43 +99,53 @@ class CharucoCalibration:
             dictionary=self.aruco_dict
         )
 
-        # Total board size in pixels, leaving margins to be added around it
+        # Calculate total board size in pixels
         board_width_px = square_length_px * self.squares[0]
         board_height_px = square_length_px * self.squares[1]
 
-        # Minimum margins in pixels, derived from mm
-        min_margin_px = int(np.round(min_margin_mm / 25.4 * self.dpi))
+        # Convert minimum margin to pixels
+        min_margin_px = int(np.round(min_margin_mm / 25.4 * dpi))
 
-        # Paper size in pixels at specified dpi
-        paper_width_px = int(np.round(self.paper_size[0] / 25.4 * self.dpi))
-        paper_height_px = int(np.round(self.paper_size[1] / 25.4 * self.dpi))
+        # Convert paper dimensions to pixels
+        paper_width_px = int(np.round(paper_size[0] / 25.4 * dpi))
+        paper_height_px = int(np.round(paper_size[1] / 25.4 * dpi))
 
-        # Calculate required margins to center board on paper
+        # Ensure board fits on paper by adjusting margins if necessary
         margin_x = max(min_margin_px, (paper_width_px - board_width_px) // 2)
         margin_y = max(min_margin_px, (paper_height_px - board_height_px) // 2)
 
-        # Create a blank white canvas
+        # Adjust paper size if the board plus margins exceed it
+        if board_width_px + 2 * margin_x > paper_width_px or board_height_px + 2 * margin_y > paper_height_px:
+            raise ValueError('Something went wrong with margin')
+
+
+        # Create a blank canvas with the adjusted paper size
         canvas = np.full((paper_height_px, paper_width_px), 255, dtype=np.uint8)
 
-        # Draw ChArUco board on canvas with calculated margins
+        # Generate the board image and place it on the canvas
         board_image = charuco_board.generateImage((board_width_px, board_height_px))
-        canvas[margin_y:margin_y + board_height_px, margin_x:margin_x + board_width_px] = board_image
+        canvas[margin_y:margin_y + board_image.shape[0], margin_x:margin_x + board_image.shape[1]] = board_image
 
+        # Save to PDF if specified
         if save_as_pdf:
             # Convert paper size to inches for Matplotlib figsize
-            fig_width_in = self.paper_size[0] / 25.4
-            fig_height_in = self.paper_size[1] / 25.4
+            fig_width_in = round(paper_size[0] / 25.4,1)
+            fig_height_in = round(paper_size[1] / 25.4,1)
 
             # Set up the figure size and save the PDF
-            fig = plt.figure(figsize=(fig_width_in, fig_height_in), dpi=self.dpi)
+            fig = plt.figure(figsize=(fig_width_in, fig_height_in), dpi=dpi)
             plt.imshow(canvas, cmap='gray', interpolation='nearest')
             plt.axis('off')
 
             # Save the PDF without extra padding or scaling
-            plt.savefig("charuco_board.pdf", format='pdf', dpi=self.dpi, bbox_inches='tight', pad_inches=0)
+            plt.savefig("charuco_board.pdf", format='pdf', dpi=dpi)
             plt.close(fig)
 
-        print('Resolution: {} pixel/mm'.format(round(canvas.shape[0] / self.paper_size[1], 2)))
+        cv2.imwrite('charuco_{}x{}_size_{}_{}.png'.format(self.squares[0], self.squares[1],
+                                                          self.marker_size[0], self.marker_size[1]), canvas)
+
+        print('Resolution: {} pixel/mm'.format(round(canvas.shape[0] / paper_size[1], 2)))
+
         return canvas
 
     def get_charuco_image(self):
