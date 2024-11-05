@@ -5,16 +5,15 @@ import matplotlib.pyplot as plt
 
 
 class CharucoCalibration:
-    def __init__(self, squares=(8,6), marker_size=(60, 40),
-                 aruco_d=cv2.aruco.DICT_6X6_250):
+    def __init__(self, squares: tuple[int, int] = (8, 6), marker_size: tuple[int, int] = (60, 40),
+                 aruco_d: int = cv2.aruco.DICT_5X5_100):
         """
         Class to calibrate stereo cameras using ChArUco calibration board
-        Parameters:
-            squares: Number of squares in board (row, col)
-            paper_size: Size of paper used (width, height) [mm]
-            dpi: Dots per inch for printer specs.
-            marker_size: Size of ChArUcos (square, marker) [mm]
-            aruco_d: ArUco dictionary
+            :param squares: Number of squares in board (row, col)
+            :param paper_size: Size of paper used (width, height) [mm]
+            :param dpi: Dots per inch for printer specs.
+            :param marker_size: Size of ChArUcos (square, marker) [mm]
+            :param aruco_d: ArUco dictionary
 
         """
         self.squares = squares
@@ -47,29 +46,24 @@ class CharucoCalibration:
 
         # Calibration results
         self.camera_params = {
-            'left': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([]),
-                     'std_kk': np.array([]), 'std_kc': np.array([])},
-
-            'right': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([]),
-                      'std_kk': np.array([]), 'std_kc': np.array([])},
-
+            'left': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([])},
+            # 'std_kk': np.array([]), 'std_kc': np.array([])},
+            'right': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([])},
+            # 'std_kk': np.array([]), 'std_kc': np.array([])},
             'stereo': {'R': np.array([]), 'T': np.array([])}
         }
 
-    def create_charucoboard(self, min_margin_mm=10, paper_size=(210, 297), dpi=300,
-                            save_as_pdf=True):
+    def create_charucoboard(self, min_margin_mm: int = 10, paper_size: tuple[int, int] = (210, 297), dpi: int = 300,
+                            save_as_pdf: bool = True) -> None:
         """
         Create ChArUco board
-        Parameters:
             :param min_margin_mm: minimum margin in mm
             :param paper_size: paper size (width, height)
             :param dpi: dots per inch for printer specs.
             :param orientation: 'landscape' or 'portrait' for board orientation
             :param save_as_pdf: boolean to save image as pdf or not
-        Returns:
-           board: image of charuco board
         """
-        print('{} squares: {} mm'.format(self.squares, tuple(sq*self.marker_size[0] for sq in self.squares)))
+        print('{} squares: {} mm'.format(self.squares, tuple(sq * self.marker_size[0] for sq in self.squares)))
         print('Paper size: {}'.format(paper_size))
 
         if (paper_size[0] <= np.ceil(self.squares[0] * self.marker_size[0] + 2 * min_margin_mm)
@@ -85,7 +79,6 @@ class CharucoCalibration:
                 print('Landscape fit')
         else:
             print('Portrait fit')
-
 
         # Calculate square and marker sizes in pixels
         square_length_px = int(np.round(self.marker_size[0] / 25.4 * dpi))
@@ -118,7 +111,6 @@ class CharucoCalibration:
         if board_width_px + 2 * margin_x > paper_width_px or board_height_px + 2 * margin_y > paper_height_px:
             raise ValueError('Something went wrong with margin')
 
-
         # Create a blank canvas with the adjusted paper size
         canvas = np.full((paper_height_px, paper_width_px), 255, dtype=np.uint8)
 
@@ -129,8 +121,8 @@ class CharucoCalibration:
         # Save to PDF if specified
         if save_as_pdf:
             # Convert paper size to inches for Matplotlib figsize
-            fig_width_in = round(paper_size[0] / 25.4,1)
-            fig_height_in = round(paper_size[1] / 25.4,1)
+            fig_width_in = round(paper_size[0] / 25.4, 1)
+            fig_height_in = round(paper_size[1] / 25.4, 1)
 
             # Set up the figure size and save the PDF
             fig = plt.figure(figsize=(fig_width_in, fig_height_in), dpi=dpi)
@@ -145,25 +137,30 @@ class CharucoCalibration:
                                                           self.marker_size[0], self.marker_size[1]), canvas)
 
         print('Resolution: {} pixel/mm'.format(round(canvas.shape[0] / paper_size[1], 2)))
+        self.board_image = canvas
 
-        return canvas
-
-    def get_charuco_image(self):
+    def get_charuco_image(self) -> np.ndarray:
         """
         Function to get ChArUco board image to print
-        Returns:
-            (height, width) ChArUco board image to print
+            :return ChArUco board image to print
         """
         return self.board_image
 
-    def load_image(self, images_path, visualize=False):
+    def view_charuco_board(self):
+        """
+        View Charuco board image
+        """
+        cv2.namedWindow('Charuco', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Charuco', self.board_image.shape[1] // 4, self.board_image.shape[0] // 4)
+        cv2.imshow('Charuco', self.board_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+    def load_image(self, images_path: str, visualize: bool = False) -> None:
         """
         Function to load image from given path.
-        Parameters:
-        image_path: path to image
-        visualize: boolean, if True image will be displayed
-        Returns:
-            Save images inside class variable
+            :param image_path: path to image
+            :param visualize: boolean, if True image will be displayed
         """
         if os.path.exists(images_path):
             images_left = sorted(os.listdir(os.path.join(images_path, 'left')))
@@ -184,15 +181,20 @@ class CharucoCalibration:
             self.images_right = np.stack(right_img, axis=-1).astype(np.uint8)  # Convert to uint8
 
         if visualize:
-            for k in range(len(self.images_left)):
-                concat = np.concatenate((self.images_left[k], self.images_right[k]), axis=1)
+            for k in range(self.images_left.shape[2]):
+                concat = np.concatenate((self.images_left[:, :, k], self.images_right[:, :, k]), axis=1)
                 cv2.namedWindow('Calibration images', cv2.WINDOW_NORMAL)
                 cv2.resizeWindow('Calibration images', concat.shape[1] // 2, concat.shape[0] // 2)
                 cv2.imshow('Calibration images', concat)
                 cv2.waitKey(0)
             cv2.destroyWindow('Calibration images')
 
-    def detect_charuco_board(self, camera, visualize=False):
+    def detect_charuco_board(self, camera: str, visualize: bool = False) -> None:
+        """
+        Function to detect charuco board in given camera.
+            :param camera: camera name to calibrate
+            :param visualize: If true show the detected markers
+        """
         if camera == 'left':
             images = self.images_left
         elif camera == 'right':
@@ -204,25 +206,26 @@ class CharucoCalibration:
             corners, ids, _ = cv2.aruco.detectMarkers(image=images[:, :, i], dictionary=self.aruco_dict)
             bgr_img = cv2.cvtColor(images[:, :, i], cv2.COLOR_GRAY2BGR)
             if ids is None:
+                print('Not detected markers at image {} from {} camera'.format(i, camera))
                 continue
             elif len(ids) > 0:
-                print('No detected markers on image {} from {} camera'.format(i, camera))
                 response, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(markerCorners=corners,
                                                                                              markerIds=ids,
                                                                                              image=images[:, :, i],
                                                                                              board=self.charuco_board)
                 # If true will show detected markers and corners images
                 if visualize:
-                    img_marker = cv2.aruco.drawDetectedMarkers(image=bgr_img, corners=corners, ids=ids)
-                    img_corners = cv2.aruco.drawDetectedCornersCharuco(image=img_marker.copy(),
+                    img_marker = cv2.aruco.drawDetectedMarkers(image=bgr_img.copy(), corners=corners, ids=ids)
+                    img_corners = cv2.aruco.drawDetectedCornersCharuco(image=bgr_img.copy(),
                                                                        charucoCorners=charuco_corners,
                                                                        charucoIds=charuco_ids)
                     concat = np.hstack((img_marker, img_corners))
-                    cv2.namedWindow('Detected images', cv2.WINDOW_NORMAL)
-                    cv2.resizeWindow('Detected images', concat.shape[1] // 2, concat.shape[0] // 2)
-                    cv2.imshow('Detected images', concat)
+                    cv2.namedWindow('Detected image {} - {}'.format(i, camera), cv2.WINDOW_NORMAL)
+                    cv2.resizeWindow('Detected image {} - {}'.format(i, camera), concat.shape[1] // 2,
+                                     concat.shape[0] // 2)
+                    cv2.imshow('Detected image {} - {}'.format(i, camera), concat)
                     cv2.waitKey(0)
-                    cv2.destroyWindow('Detected images')
+                    cv2.destroyWindow('Detected image {} - {}'.format(i, camera))
                 # Save charuco corners id for first image as reference
                 if i == 0:
                     self.references_ids = set(charuco_ids.flatten())
@@ -233,20 +236,106 @@ class CharucoCalibration:
                         if corner_id[0] in self.references_ids:
                             filtered_corners.append(corners)
                             filtered_ids.append(corner_id)
-                    if len(filtered_corners) > 2:
+                    if len(filtered_corners) > 10:
                         self.all_corners[camera].append(np.array(filtered_corners, dtype=np.float32))
                         self.all_ids[camera].append(np.array(filtered_ids, dtype=np.int32))
 
-    def calibration_camera(self, camera, visualize=False):
+    def calibration_camera(self, camera: str) -> None:
+        """
+        Calibrate camera using charuco board
+            :param camera: camera name to calibrate
+        """
         if len(self.all_corners[camera]) > 0:
-            ret, kk, kc, rvecs, tvecs, std_kk, std_kc = cv2.aruco.calibrateCameraCharucoExtended(
+            kk, kc = None, None
+            ret, kk, kc, rvecs, tvecs = cv2.aruco.calibrateCameraCharuco(
                 charucoCorners=self.all_corners[camera],
                 charucoIds=self.all_ids[camera],
                 board=self.charuco_board,
+                cameraMatrix=kk,
+                distCoeffs=kc,
                 imageSize=(self.images_left.shape[1], self.images_left.shape[0]))
+
             self.camera_params[camera]['kk'] = kk
             self.camera_params[camera]['kc'] = kc
-            self.camera_params[camera]['rvecs'] = rvecs[0]
-            self.camera_params[camera]['tvecs'] = tvecs[0]
-            self.camera_params[camera]['std_kk'] = std_kk
-            self.camera_params[camera]['std_kc'] = std_kc
+            self.camera_params[camera]['r'], _ = cv2.Rodrigues(rvecs[0])
+            self.camera_params[camera]['t'] = tvecs[0]
+            # self.camera_params[camera]['std_kk'] = std_kk
+            # self.camera_params[camera]['std_kc'] = std_kc
+
+    def show_undistorted_image(self, camera: str, images_list: list = None) -> None:
+        """
+        Show undistorted image from calibrated process
+            :param camera: Left or Right camera
+            :param images_list: list of images to show
+            :return: Visualization of distorted and undistorted image
+        """
+        kc = self.camera_params[camera]['kc']
+        kk = self.camera_params[camera]['kk']
+
+        # Verify camera variable input to define images to show
+        if camera == 'left':
+            images = self.images_left
+        elif camera == 'right':
+            images = self.images_right
+        else:
+            raise Exception('Camera must be either left or right')
+
+        # Check images_list
+        if images_list is None:
+            print("Show all undistort all images")
+            images_list = np.arange(images.shape[2])
+
+        for k in images_list:
+            undist_img = cv2.undistort(images[:, :, k], kk, kc, None, None)
+            concat = np.concatenate((images[:, :, k], undist_img), axis=1)
+            cv2.namedWindow('Undistorted image {} - {}'.format(k, camera), cv2.WINDOW_NORMAL)
+            cv2.resizeWindow('Undistorted image {} - {}'.format(k, camera),
+                             concat.shape[1] // 2, concat.shape[0] // 2)
+            cv2.imshow('Undistorted image {} - {}'.format(k, camera), concat)
+            cv2.waitKey(0)
+            cv2.destroyWindow('Undistorted image {} - {}'.format(k, camera))
+
+    def homogeneous_matrix(self, camera: str, visualize: bool = False) -> cv2.Mat:
+
+        kk = self.camera_params[camera]['kk']
+        kc = self.camera_params[camera]['kc']
+        # Verify camera variable input to define images to show
+        if camera == 'left':
+            images = self.images_left
+        elif camera == 'right':
+            images = self.images_right
+        else:
+            raise Exception('Camera must be either left or right')
+        w, h = images.shape[1], images.shape[0]
+
+        new_camera_matrix, _ = cv2.getOptimalNewCameraMatrix(kk, kc, (w, h), alpha=1)
+
+        # Generate some points in the original image
+        original_points = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32).reshape(-1, 1, 2)
+
+        # Undistort points using both the original and the new camera matrix
+        undistorted_points = cv2.undistortPoints(original_points, kk, kc, P=new_camera_matrix)
+        undistorted_points = undistorted_points.reshape(-1, 2)
+        original_points = original_points.reshape(-1, 2)
+
+        # Find the homography matrix from original to new undistorted plane
+        H, _ = cv2.findHomography(original_points.reshape(-1, 2), undistorted_points)
+
+        print("Homography matrix (Original to New Plane) from {} left:\n {}".format(camera, H))
+
+        if visualize:
+            # Apply the homography to warp the original image to the new plane
+            for k in range(images.shape[2]):
+                warped_image = cv2.warpPerspective(images[:, :, k], H, (w, h))
+                # Draw a grid on the original image
+
+                # Display the grid-transformed image
+                concat = np.concatenate((images[:, :, k], warped_image), axis=1)
+                cv2.namedWindow('Warped Image with Grid {} - {}'.format(k, camera), cv2.WINDOW_NORMAL)
+                cv2.resizeWindow('Warped Image with Grid {} - {}'.format(k, camera),
+                                 concat.shape[1] // 2, concat.shape[0] // 2)
+                cv2.imshow('Warped Image with Grid {} - {}'.format(k, camera), concat)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
+
+        return H
