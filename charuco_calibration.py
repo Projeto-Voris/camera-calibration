@@ -27,6 +27,7 @@ class CharucoCalibration:
             markerLength=marker_size[1],  # mm
             dictionary=self.aruco_dict
         )
+        self.object_points = []
         print("ChArUco board size:: {}".format(self.squares))
         print('Dimension of board: {} mm'.format(self.marker_size[0]))
         print('Dimension of marker: {} mm'.format(self.marker_size[1]))
@@ -46,11 +47,11 @@ class CharucoCalibration:
 
         # Calibration results
         self.camera_params = {
-            'left': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([])},
+            'left': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([]), 'H': np.array([])},
             # 'std_kk': np.array([]), 'std_kc': np.array([])},
-            'right': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([])},
+            'right': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([]), 'H': np.array([])},
             # 'std_kk': np.array([]), 'std_kc': np.array([])},
-            'stereo': {'R': np.array([]), 'T': np.array([])}
+            'stereo': {'R': np.array([]), 'T': np.array([]), 'E': np.array([]), 'F': np.array([])}
         }
 
     def create_charucoboard(self, min_margin_mm: int = 10, paper_size: tuple[int, int] = (210, 297), dpi: int = 300,
@@ -179,7 +180,7 @@ class CharucoCalibration:
             # Convert to numpy array
             self.images_left = np.stack(left_img, axis=-1).astype(np.uint8)  # Convert to uint8
             self.images_right = np.stack(right_img, axis=-1).astype(np.uint8)  # Convert to uint8
-
+            self.object_points = [self.charuco_board.getChessboardCorners()] * self.images_left.shape[2]
         if visualize:
             for k in range(self.images_left.shape[2]):
                 concat = np.concatenate((self.images_left[:, :, k], self.images_right[:, :, k]), axis=1)
@@ -214,6 +215,7 @@ class CharucoCalibration:
                                                                                              image=images[:, :, i],
                                                                                              board=self.charuco_board)
                 # If true will show detected markers and corners images
+
                 if visualize:
                     img_marker = cv2.aruco.drawDetectedMarkers(image=bgr_img.copy(), corners=corners, ids=ids)
                     img_corners = cv2.aruco.drawDetectedCornersCharuco(image=bgr_img.copy(),
@@ -230,15 +232,15 @@ class CharucoCalibration:
                 if i == 0:
                     self.references_ids = set(charuco_ids.flatten())
                 if response and charuco_corners is not None:
-                    filtered_corners = []
-                    filtered_ids = []
-                    for corners, corner_id in zip(charuco_corners, charuco_ids):
-                        if corner_id[0] in self.references_ids:
-                            filtered_corners.append(corners)
-                            filtered_ids.append(corner_id)
-                    if len(filtered_corners) > 10:
-                        self.all_corners[camera].append(np.array(filtered_corners, dtype=np.float32))
-                        self.all_ids[camera].append(np.array(filtered_ids, dtype=np.int32))
+                    # filtered_corners = []
+                    # filtered_ids = []
+                    # for corners, corner_id in zip(charuco_corners, charuco_ids):
+                    #     if corner_id[0] in self.references_ids:
+                    #         filtered_corners.append(corners)
+                    #         filtered_ids.append(corner_id)
+                    if len(charuco_corners) > 10:
+                        self.all_corners[camera].append(np.array(charuco_corners, dtype=np.float32))
+                        self.all_ids[camera].append(np.array(charuco_ids, dtype=np.int32))
 
     def calibration_camera(self, camera: str) -> None:
         """
@@ -258,9 +260,32 @@ class CharucoCalibration:
             self.camera_params[camera]['kk'] = kk
             self.camera_params[camera]['kc'] = kc
             self.camera_params[camera]['r'], _ = cv2.Rodrigues(rvecs[0])
-            self.camera_params[camera]['t'] = tvecs[0]
+            self.camera_params[camera]['t'] = tvecs
             # self.camera_params[camera]['std_kk'] = std_kk
             # self.camera_params[camera]['std_kc'] = std_kc
+
+    def stereo_calibration(self) -> None:
+        # ret, camera_matrix1, dist_coeffs1, camera_matrix2, dist_coeffs2, R, T, E, F
+        ret, _, _, _, _, R, T, E, F = cv2.stereoCalibrate(objectPoints=self.object_points,
+                                                          imagePoints1=self.all_corners['left'],
+                                                          imagePoints2=self.all_corners['right'],
+                                                          cameraMatrix1=self.camera_params['left']['kk'],
+                                                          distCoeffs1=self.camera_params['left']['kc'],
+                                                          cameraMatrix2=self.camera_params['right']['kk'],
+                                                          distCoeffs2=self.camera_params['right']['kc'],
+                                                          imageSize=self.images_left.shape[::2],
+                                                          flags=cv2.CALIB_FIX_INTRINSIC)
+
+        print('Stereo calibration done')
+        print('R: {}'.format(R))
+        print('T: {}'.format(T))
+        print('E: {}'.format(E))
+        print('F: {}'.format(F))
+        # Store on Camera parameters
+        self.camera_params['stereo']['R'] = R
+        self.camera_params['stereo']['T'] = T
+        self.camera_params['stereo']['E'] = E
+        self.camera_params['stereo']['F'] = F
 
     def show_undistorted_image(self, camera: str, images_list: list = None) -> None:
         """
@@ -295,7 +320,7 @@ class CharucoCalibration:
             cv2.waitKey(0)
             cv2.destroyWindow('Undistorted image {} - {}'.format(k, camera))
 
-    def homogeneous_matrix(self, camera: str, visualize: bool = False) -> cv2.Mat:
+    def homogeneous_matrix(self, camera: str, visualize: bool = False) -> None:
 
         kk = self.camera_params[camera]['kk']
         kc = self.camera_params[camera]['kc']
@@ -322,6 +347,7 @@ class CharucoCalibration:
         H, _ = cv2.findHomography(original_points.reshape(-1, 2), undistorted_points)
 
         print("Homography matrix (Original to New Plane) from {} left:\n {}".format(camera, H))
+        self.camera_params[camera]['H'] = H
 
         if visualize:
             # Apply the homography to warp the original image to the new plane
@@ -338,4 +364,3 @@ class CharucoCalibration:
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
-        return H

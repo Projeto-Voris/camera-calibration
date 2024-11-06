@@ -20,9 +20,9 @@ def main():
     charuco.detect_charuco_board(camera='right', visualize=False)
     charuco.calibration_camera(camera='left')
     charuco.calibration_camera(camera='right')
-
+    print('debug')
     # charuco.show_undistorted_image(camera='left')
-    H_left = charuco.homogeneous_matrix(camera='left', visualize=True)
+    charuco.homogeneous_matrix(camera='left', visualize=True)
     # print(charuco.all_ids['right'])
     print('debugger')
 
