@@ -2,10 +2,10 @@ camera0: 4
 camera1: 6
 frame_width: 1600
 frame_height: 1200
-mono_calibration_frames: 8
-stereo_calibration_frames: 8
+mono_calibration_frames: 21
+stereo_calibration_frames: 21
 view_resize: 1
-checkerboard_box_size_scale : 0.055
-checkerboard_rows: 6
-checkerboard_columns: 9
+checkerboard_box_size_scale : 0.025
+checkerboard_rows: 10
+checkerboard_columns: 15
 cooldown: 100
