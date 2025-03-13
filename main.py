@@ -1,8 +1,8 @@
-from include import charuco_calibration
+from src.charuco_calibration import CharucoCalibration
+from src.extrinsic_calibration import ExtrinsicCalib
 
-
-def main():
-    charuco = charuco_calibration.CharucoCalibration(squares=(12, 8), marker_size=(28, 18))  # Sent to print
+def charuco_calibration():
+    charuco = CharucoCalibration(squares=(12, 8), marker_size=(28, 18))  # Sent to print
     # charuco = charuco_calibration.CharucoCalibration(squares=(5, 10), dpi=600, paper_size=(297, 210), marker_size=(30, 20)) # images 21/10
     charuco.create_charucoboard(min_margin_mm=5, paper_size=(297, 420), dpi=600, save_as_pdf=False)
 
@@ -27,6 +27,11 @@ def main():
     # print(charuco.all_ids['right'])
     print('debugger')
 
+def aruco_markers():
+    extrinsic = ExtrinsicCalib(markers_ids=[0, 1, 2, 3], markers_size=100)
+    extrinsic.generat_aruco_markers(markers_path='./markers')
 
 if __name__ == '__main__':
-    main()
+    # charuco_calibration()
+    aruco_markers()
+    # extrinsic_calibration()
