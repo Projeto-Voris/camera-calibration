@@ -37,6 +37,7 @@ class CharucoCalibration:
         self.board_image = None
 
         # Images variables
+        self.images_path = None
         self.images_left = np.array([])
         self.images_right = np.array([])
 
@@ -164,6 +165,7 @@ class CharucoCalibration:
             :param visualize: boolean, if True image will be displayed
         """
         if os.path.exists(images_path):
+            self.images_path = images_path
             images_left = sorted(os.listdir(os.path.join(images_path, 'left')))
             images_right = sorted(os.listdir(os.path.join(images_path, 'right')))
             if len(images_left) != len(images_right):
@@ -260,11 +262,23 @@ class CharucoCalibration:
             self.camera_params[camera]['kk'] = kk
             self.camera_params[camera]['kc'] = kc
             self.camera_params[camera]['r'], _ = cv2.Rodrigues(rvecs[0])
-            self.camera_params[camera]['t'] = tvecs
+            self.camera_params[camera]['t'] = tvecs[0]
             # self.camera_params[camera]['std_kk'] = std_kk
             # self.camera_params[camera]['std_kc'] = std_kc
 
     def stereo_calibration(self) -> None:
+        """
+        Stereo calibration using left and right camera
+        """
+        # Ensure the number of object points matches the number of image points
+        num_object_points = len(self.object_points)
+        num_image_points_left = len(self.all_corners['left'])
+        num_image_points_right = len(self.all_corners['right'])
+    
+        if num_object_points != num_image_points_left or num_object_points != num_image_points_right:
+            raise ValueError(f"Number of object points ({num_object_points}) must be equal to the number of image points "
+                             f"({num_image_points_left} left, {num_image_points_right} right)")
+    
         # ret, camera_matrix1, dist_coeffs1, camera_matrix2, dist_coeffs2, R, T, E, F
         ret, _, _, _, _, R, T, E, F = cv2.stereoCalibrate(objectPoints=self.object_points,
                                                           imagePoints1=self.all_corners['left'],
@@ -275,7 +289,7 @@ class CharucoCalibration:
                                                           distCoeffs2=self.camera_params['right']['kc'],
                                                           imageSize=self.images_left.shape[::2],
                                                           flags=cv2.CALIB_FIX_INTRINSIC)
-
+    
         print('Stereo calibration done')
         print('R: {}'.format(R))
         print('T: {}'.format(T))
@@ -364,3 +378,32 @@ class CharucoCalibration:
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
+
+    def save_camera_params(self, path: str) -> None:
+        """
+        Save camera parameters to a file
+            :param path: path to save camera parameters
+        """
+        def format_matrix(matrix):
+            return '\n'.join(['  - [' + ', '.join(f'{item:.4e}' for item in row) + ']' for row in matrix])
+
+        def format_vector(vector):
+            return '[' + ', '.join(f'{item:.4e}' for item in vector) + ']'
+
+        with open(path, 'w') as f:
+            f.write('# Left and right Charuco calibration \n #{}\n'.format(self.images_path))
+            f.write('\ncamera_matrix_left:\n')
+            f.write(format_matrix(self.camera_params['left']['kk']) + '\n')
+            f.write('\ndist_coeffs_left: ' + format_vector(self.camera_params['left']['kc'].flatten()) + '\n')
+            f.write('\nrot_matrix_left:\n')
+            f.write(format_matrix(self.camera_params['left']['r']) + '\n')
+            f.write('\nt_left: ' + format_vector(self.camera_params['left']['t'].flatten()) + '\n')
+            f.write('\ncamera_matrix_right:\n')
+            f.write(format_matrix(self.camera_params['right']['kk']) + '\n')
+            f.write('\ndist_coeffs_right: ' + format_vector(self.camera_params['right']['kc'].flatten()) + '\n')
+            f.write('\nrot_matrix_right:\n')
+            f.write(format_matrix(self.camera_params['right']['r']) + '\n')
+            f.write('\nt_right: ' + format_vector(self.camera_params['right']['t'].flatten()) + '\n')
+            f.write('\nR:\n')
+            f.write(format_matrix(self.camera_params['stereo']['R']) + '\n')
+            f.write('\nT: ' + format_vector(self.camera_params['stereo']['T'].flatten()) + '\n')

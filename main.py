@@ -13,15 +13,17 @@ def main():
 
     # cv2.imwrite('charuco_a3_600dpi.png', board_img)
 
-    images_path = 'images/SM4/20241029 - charuco'
+    images_path = '/home/daniel/Insync/daniel.regner@labmetro.ufsc.br/Google Drive - Shared drives/VORIS - Media/Experimentos/Calib Extrinseca/20250311/S1'
     charuco.load_image(images_path=images_path, visualize=False)
-    charuco.detect_charuco_board(camera='left', visualize=False)
-    charuco.detect_charuco_board(camera='right', visualize=False)
+    charuco.detect_charuco_board(camera='left', visualize=True)
+    charuco.detect_charuco_board(camera='right', visualize=True)
     charuco.calibration_camera(camera='left')
     charuco.calibration_camera(camera='right')
+    charuco.stereo_calibration()
+    charuco.save_camera_params(path='./calibration_params.yaml')
     print('debug')
     # charuco.show_undistorted_image(camera='left')
-    charuco.homogeneous_matrix(camera='left', visualize=True)
+    charuco.homogeneous_matrix(camera='left', visualize=False)
     # print(charuco.all_ids['right'])
     print('debugger')
 
