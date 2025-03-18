@@ -1,3 +1,4 @@
+import cv2
 from src.charuco_calibration import CharucoCalibration
 from src.extrinsic_calibration import ExtrinsicCalib
 
@@ -13,14 +14,14 @@ def charuco_calibration():
 
     # cv2.imwrite('charuco_a3_600dpi.png', board_img)
 
-    images_path = '/home/daniel/Insync/daniel.regner@labmetro.ufsc.br/Google Drive - Shared drives/VORIS - Media/Experimentos/Calib Extrinseca/20250311/S1'
+    images_path = '/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/S1'
     charuco.load_image(images_path=images_path, visualize=False)
     charuco.detect_charuco_board(camera='left', visualize=True)
     charuco.detect_charuco_board(camera='right', visualize=True)
     charuco.calibration_camera(camera='left')
     charuco.calibration_camera(camera='right')
     charuco.stereo_calibration()
-    charuco.save_camera_params(path='./calibration_params.yaml')
+    charuco.save_camera_params(path='./camera_parameters/calibration_params.yaml')
     print('debug')
     # charuco.show_undistorted_image(camera='left')
     charuco.homogeneous_matrix(camera='left', visualize=False)
@@ -28,8 +29,30 @@ def charuco_calibration():
     print('debugger')
 
 def aruco_markers():
-    extrinsic = ExtrinsicCalib(markers_ids=[0, 1, 2, 3], markers_size=100)
-    extrinsic.generat_aruco_markers(markers_path='./markers')
+    yaml_file = './camera_parameters/calibration_params.yaml'
+    extrinsic = ExtrinsicCalib(yaml_file)
+    extrinsic.read_yaml_file(yaml_file)
+    
+    # Caminho para a imagem que será usada para detectar os marcadores ArUco
+    image_path = '/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/S1/left/L000.png'
+    image = cv2.imread(image_path)
+    
+    if image is None:
+        print(f"Erro ao carregar a imagem: {image_path}")
+        return
+    
+    # Detectar os marcadores ArUco na imagem
+    image, corners, ids = extrinsic.detect_aruco_markers(image)
+    
+    if ids is None:
+        print("Nenhum marcador ArUco detectado.")
+    else:
+        print(f"Marcadores ArUco detectados: {ids.flatten()}")
+    
+    # # Mostrar os marcadores detectados
+    # extrinsic.show_detected_markers(image, corners, ids)
+
+    extrinsic.solve_pnp_maker(ids, corners, camera='left')
 
 if __name__ == '__main__':
     # charuco_calibration()

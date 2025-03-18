@@ -5,9 +5,11 @@ import matplotlib as plt
 import os
 
 class ExtrinsicCalib:
-    def __init__(self, yaml_file, markers_ids=[0, 1, 2, 3], markers_size=100, dpi, aruco_d: int = cv2.aruco.DICT_4X4_100):
+    def __init__(self, yaml_file, markers_ids=[0, 1, 2, 3], markers_size= (60,40) , dpi=600, aruco_d: int = cv2.aruco.DICT_5X5_100):
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_d)
+        if self.aruco_dict is None:
+            print("Erro ao carregar o dicionário ArUco.")
         self.markers_ids = markers_ids # list of markers ids
         self.markers_size = markers_size # in millimeters
         self.dpi = dpi
@@ -65,9 +67,15 @@ class ExtrinsicCalib:
             cv2.imwrite(os.path.join(markers_path, f'aruco_marker_{marker_id}_a4.png'), a4_image)
 
     def detect_aruco_markers(self, image):
-        if len(image.shape) == 3:
+        if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        corners, ids, rejectedImgPoints = cv2.aruco.detectMarkers(image, self.aruco_dict)
+        
+        corners, ids, _ = cv2.aruco.detectMarkers(image, self.aruco_dict)
+        
+        if ids is None:
+            print("Nenhum marcador ArUco detectado.")
+            return image, corners, ids
+       
         return image, corners, ids
     
     def show_detected_markers(self, image, corners, ids):
@@ -76,22 +84,36 @@ class ExtrinsicCalib:
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-    def solve_pnp_maker(self, camera: str,  marker_id: int, corners: tuple):
-        """
-        Solve the PnP problem for a single marker
-        """
-        # Get the marker position in meters
-        objPoints = np.array([[-self.marker_size/2, -self.marker_size/2, 0],
-                              [self.marker_size/2, -self.marker_size/2, 0],
-                              [self.marker_size/2, self.marker_size/2, 0],
-                              [-self.marker_size/2, self.marker_size/2, 0]], dtype=np.float32)*1e-3
-        success, rvec, tvec = cv2.solvePnP(objPoints, corners, self.camera_params[camera]['kk'], self.camera_params[camera]['kc'])
-        if success:
-            rot_matrix, _ = cv2.Rodrigues(rvec)
-            translation_matrix = np.eye(4)
-            translation_matrix[:3, :3] = rot_matrix
-            translation_matrix[:3, 3] = tvec.flatten()
-            return translation_matrix
-        else:
-            raise Warning('Failed to solve PnP problem')
-            return None
+    def solve_pnp_maker(self, ids, corners, camera='left'):
+        for i in range(len(ids)):
+            # Ensure i is an integer
+            corner = corners[i]
+            
+            squareLength = self.markers_size[0]/1000  # Convert to meters
+
+            # Define the 3D points of the marker corners in the world coordinate space
+            marker_points = np.array([
+                [-squareLength / 2, squareLength / 2, 0],
+                [squareLength / 2, squareLength/ 2, 0],
+                [squareLength / 2, -squareLength/ 2, 0],
+                [-squareLength / 2, -squareLength/ 2, 0]
+            ], dtype=np.float32)
+
+            success, rvec, tvec = cv2.solvePnP(
+                objectPoints=marker_points,
+                imagePoints=corner,
+                cameraMatrix=self.camera_params[camera]['kk'],
+                distCoeffs=self.camera_params[camera]['kc'],
+                flags=cv2.SOLVEPNP_IPPE_SQUARE
+            )
+            if success:
+                rot_matrix, _ = cv2.Rodrigues(rvec)
+                translation_matrix = np.eye(4)
+                translation_matrix[:3, :3] = rot_matrix
+                translation_matrix[:3, 3] = tvec.flatten()
+                print(f"translation_matrix: {translation_matrix}, and rvec: {rvec}")
+                return translation_matrix
+                
+            else:
+                raise Warning('Failed to solve PnP problem')
+                return None
