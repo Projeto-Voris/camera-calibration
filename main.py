@@ -1,3 +1,5 @@
+import os.path
+
 import cv2
 from src.charuco_calibration import CharucoCalibration
 from src.extrinsic_calibration import ExtrinsicCalib
@@ -30,29 +32,41 @@ def charuco_calibration():
 
 def aruco_markers():
     yaml_file = './camera_parameters/calibration_params.yaml'
-    extrinsic = ExtrinsicCalib(yaml_file)
+    extrinsic = ExtrinsicCalib(yaml_file, markers_size=95)
     extrinsic.read_yaml_file(yaml_file)
+
+    # extrinsic.generat_aruco_markers(markers_path='./markers')
     
     # Caminho para a imagem que será usada para detectar os marcadores ArUco
-    image_path = '/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/S1/left/L000.png'
-    image = cv2.imread(image_path)
-    
-    if image is None:
-        print(f"Erro ao carregar a imagem: {image_path}")
-        return
-    
-    # Detectar os marcadores ArUco na imagem
-    image, corners, ids = extrinsic.detect_aruco_markers(image)
-    
-    if ids is None:
-        print("Nenhum marcador ArUco detectado.")
-    else:
-        print(f"Marcadores ArUco detectados: {ids.flatten()}")
-    
-    # # Mostrar os marcadores detectados
-    # extrinsic.show_detected_markers(image, corners, ids)
+    path = '/home/daniel/Insync/daniel.regner@labmetro.ufsc.br/Google Drive - Shared drives/VORIS - Media/Experimentos/Calib Extrinseca/20250319'
+    left_images_names = sorted(os.listdir(os.path.join(path, 'left')))
+    right_images_names = sorted(os.listdir(os.path.join(path, 'right')))
+    left_iamges = [cv2.imread(os.path.join(path, 'left', image)) for image in left_images_names]
+    right_images = [cv2.imread(os.path.join(path, 'right', image)) for image in right_images_names]
 
-    extrinsic.solve_pnp_maker(ids, corners, camera='left')
+    t_left = []
+    t_right = []
+    for left_img, right_img in zip(left_iamges, right_images):
+
+        # Detectar os marcadores ArUco na imagem
+        corners_l, ids_l = extrinsic.detect_aruco_markers(left_img)
+        corners_r, ids_r = extrinsic.detect_aruco_markers(right_img)
+
+        if ids_l is None and ids_r is None:
+            print("Nenhum marcador ArUco detectado.")
+        else:
+            print(f"Marcadores ArUco detectados: {ids_l.flatten()}")
+            print(f"Marcadores ArUco detectados: {ids_r.flatten()}")
+            extrinsic.show_stereo_detection_markers(left=left_img, right=right_img, corners_left=corners_l, corners_right=corners_r, ids_left=ids_l, ids_right=ids_r)
+
+
+
+    # # Mostrar os marcadores detectados
+        # extrinsic.show_detected_markers(image, corners, ids)
+        extrinsic.solve_pnp_maker(ids_l, corners_l, camera='left')
+        extrinsic.solve_pnp_maker(ids_r, corners_r, camera='right')
+        data = extrinsic.data
+    print(data)
 
 if __name__ == '__main__':
     # charuco_calibration()
