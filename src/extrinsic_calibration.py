@@ -6,7 +6,6 @@ import os
 import matplotlib.pyplot as plt
 from collections import deque
 
-
 class ExtrinsicCalib:
     def __init__(self, yaml_file, markers_ids=[0, 1, 2, 3], markers_size=100, dpi=600, aruco_d: int = cv2.aruco.DICT_5X5_100):
 
@@ -96,6 +95,7 @@ class ExtrinsicCalib:
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
+
     def pose_estimation (self, ids, corners, camera: str, show = False):
 
         for i in range(len(ids)):
@@ -134,6 +134,7 @@ class ExtrinsicCalib:
                 flags=cv2.SOLVEPNP_IPPE_SQUARE
             )
             if success:
+
                 self.data[camera].setdefault(i, {'rvec': [], 'tvec': []})
                 self.data[camera][i]['rvec'].append(rvec)
                 self.data[camera][i]['tvec'].append(tvec)
