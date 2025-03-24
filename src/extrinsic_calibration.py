@@ -3,6 +3,7 @@ import cv2
 import yaml
 import matplotlib as plt
 import os
+import matplotlib.pyplot as plt
 from collections import deque
 
 class ExtrinsicCalib:
@@ -54,7 +55,6 @@ class ExtrinsicCalib:
         self.camera_params['stereo']['R'] = np.array(params['R'], dtype=np.float64)
         self.camera_params['stereo']['T'] = np.array(params['T'], dtype=np.float64)
 
-
     def generat_aruco_markers(self, markers_path):
         
         os.makedirs(markers_path, exist_ok=True)
@@ -95,23 +95,27 @@ class ExtrinsicCalib:
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-    def show_stereo_detection_markers(self, left, right, ids_left, ids_right, corners_left, corners_right):
-        image_left = cv2.aruco.drawDetectedMarkers(left, corners_left, ids_left)
-        image_right = cv2.aruco.drawDetectedMarkers(right, corners_right, ids_right)
-        concat = np.concatenate((image_left, image_right), axis=1)
-        cv2.namedWindow('stereo markers', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('stereo markers', concat.shape[1]//2, concat.shape[0]//2)
-        cv2.imshow('stereo markers', concat)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
 
-
-    def solve_pnp_maker(self, ids, corners, camera='left'):
+    def pose_estimation (self, ids, corners, camera: str, show = False):
 
         for i in range(len(ids)):
             # Ensure i is an integer
             corner = corners[i]
             
+            if show:
+                print(f"translation_matrix: {tvec}, and rvec: {rvec}")
+                # frame_processed = cv2.drawFrameAxes(image=image, 
+                #                                         cameraMatrix=self.camera_params[camera]['kk'],
+                #                                         distCoeffs=self.camera_params[camera]['kc'], 
+                #                                         rvec=rvec, 
+                #                                         tvec=tvec, 
+                #                                         length=self.markers_size[0]/2000,
+                #                                         thickness=2)
+                
+                # cv2.imshow('Detected markers', frame_processed)
+                # cv2.waitKey(0)
+                # cv2.destroyAllWindows()
+
             squareLength = self.markers_size/1000  # Convert to meters
 
             # Define the 3D points of the marker corners in the world coordinate space
@@ -130,5 +134,70 @@ class ExtrinsicCalib:
                 flags=cv2.SOLVEPNP_IPPE_SQUARE
             )
             if success:
+
+                self.data[camera].setdefault(i, {'rvec': [], 'tvec': []})
                 self.data[camera][i]['rvec'].append(rvec)
                 self.data[camera][i]['tvec'].append(tvec)
+                return rvec, tvec
+
+    def calculate_relative_pose(self, rvec_left, tvec_left, rvec_right, tvec_right):
+        # Converta rvec para matriz de rotação
+        R_left, _ = cv2.Rodrigues(rvec_left)
+        R_right, _ = cv2.Rodrigues(rvec_right)
+
+        # Crie as matrizes de transformação homogênea
+        T_left = np.eye(4)
+        T_left[:3, :3] = R_left
+        T_left[:3, 3] = tvec_left.flatten()
+
+        T_right = np.eye(4)
+        T_right[:3, :3] = R_right
+        T_right[:3, 3] = tvec_right.flatten()
+
+        # Calcule a transformação relativa: T_right_to_left = T_left^-1 * T_right
+        T_left_inv = np.linalg.inv(T_left)
+        T_right_to_left = T_left_inv @ T_right  # Certifique-se de que a ordem está correta
+
+        print("T_left:")
+        print(T_left)
+        print("T_right:")
+        print(T_right)
+        print("T_right_to_left:")
+        print(T_right_to_left)
+
+        # Extraia a rotação e translação relativas
+        R_relative = np.eye(3)
+        t_relative = T_right_to_left[:3, 3]
+
+        return R_relative, t_relative
+
+    def plot_camera_axes(self, R, t, ax, label):
+        # Define os eixos da câmera no sistema de coordenadas local
+        axes_length = 0.1  # Comprimento dos eixos
+        origin = t.flatten()
+        x_axis = origin + R[:, 0] * axes_length
+        y_axis = origin + R[:, 1] * axes_length
+        z_axis = origin + R[:, 2] * axes_length
+
+        # Plota os eixos
+        ax.quiver(*origin, *(x_axis - origin), color='r', label=f'{label} X-axis')
+        ax.quiver(*origin, *(y_axis - origin), color='g', label=f'{label} Y-axis')
+        ax.quiver(*origin, *(z_axis - origin), color='b', label=f'{label} Z-axis')
+
+    def visualize_relative_pose(self, R_relative, t_relative):
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Origem da câmera esquerda
+        self.plot_camera_axes(np.eye(3), np.zeros((3, 1)), ax, label='Left Camera')
+
+        # Origem da câmera direita (relativa à esquerda)
+        self.plot_camera_axes(R_relative, t_relative, ax, label='Right Camera')
+
+        # Configurações do gráfico
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title('Relative Pose of Cameras')
+        ax.legend()
+        plt.show()
