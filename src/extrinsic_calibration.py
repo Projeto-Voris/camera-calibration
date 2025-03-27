@@ -29,9 +29,8 @@ class ExtrinsicCalib:
         }
 
         for marker_id in self.markers_ids:
-            self.data['left'][marker_id] = {'rvec': deque(maxlen=30), 'tvec': deque(maxlen=30)}
-            self.data['right'][marker_id] = {'rvec': deque(maxlen=30), 'tvec': deque(maxlen=30)}
-
+            self.data['left'][marker_id] = {'translation_matrix': deque(maxlen=30)}
+            self.data['right'][marker_id] = {'translation_matrix': deque(maxlen=30)}
 
     def read_yaml_file(self, yaml_file):
         """
@@ -96,27 +95,13 @@ class ExtrinsicCalib:
         cv2.destroyAllWindows()
 
 
-    def pose_estimation (self, ids, corners, camera: str, show = False):
+    def pose_estimation (self, ids, corners, camera: str,image, show=True ):
 
         for i in range(len(ids)):
             # Ensure i is an integer
             corner = corners[i]
             
-            if show:
-                print(f"translation_matrix: {tvec}, and rvec: {rvec}")
-                # frame_processed = cv2.drawFrameAxes(image=image, 
-                #                                         cameraMatrix=self.camera_params[camera]['kk'],
-                #                                         distCoeffs=self.camera_params[camera]['kc'], 
-                #                                         rvec=rvec, 
-                #                                         tvec=tvec, 
-                #                                         length=self.markers_size[0]/2000,
-                #                                         thickness=2)
-                
-                # cv2.imshow('Detected markers', frame_processed)
-                # cv2.waitKey(0)
-                # cv2.destroyAllWindows()
-
-            squareLength = self.markers_size/1000  # Convert to meters
+            squareLength = self.markers_size/1000 # Convert to meters
 
             # Define the 3D points of the marker corners in the world coordinate space
             marker_points = np.array([
@@ -124,7 +109,7 @@ class ExtrinsicCalib:
                 [squareLength / 2, squareLength/ 2, 0],
                 [squareLength / 2, -squareLength/ 2, 0],
                 [-squareLength / 2, -squareLength/ 2, 0]
-            ], dtype=np.float32)
+            ], dtype=np.float64)
 
             success, rvec, tvec = cv2.solvePnP(
                 objectPoints=marker_points,
@@ -133,47 +118,53 @@ class ExtrinsicCalib:
                 distCoeffs=self.camera_params[camera]['kc'],
                 flags=cv2.SOLVEPNP_IPPE_SQUARE
             )
+            if show:
+                image = cv2.drawFrameAxes(
+                    image=image, 
+                    cameraMatrix=self.camera_params[camera]['kk'],
+                    distCoeffs=self.camera_params[camera]['kc'], 
+                    rvec=rvec, 
+                    tvec=tvec, 
+                    length=squareLength/2,
+                    thickness=2)
+
             if success:
 
                 self.data[camera].setdefault(i, {'rvec': [], 'tvec': []})
-                self.data[camera][i]['rvec'].append(rvec)
-                self.data[camera][i]['tvec'].append(tvec)
-                return rvec, tvec
+                rot_matrix, _ = cv2.Rodrigues(rvec)
+                translation_matrix = np.eye(4)
+                translation_matrix[:3, :3] = rot_matrix
+                translation_matrix[:3, 3] = tvec.flatten()
 
-    def calculate_relative_pose(self, rvec_left, tvec_left, rvec_right, tvec_right):
-        # Converta rvec para matriz de rotação
-        R_left, _ = cv2.Rodrigues(rvec_left)
-        R_right, _ = cv2.Rodrigues(rvec_right)
+                if 'translation_matrix' not in self.data[camera][i]:
+                    self.data[camera][i]['translation_matrix'] = []
+                    
+                self.data[camera][i]['translation_matrix'].append(translation_matrix)
 
-        # Crie as matrizes de transformação homogênea
-        T_left = np.eye(4)
-        T_left[:3, :3] = R_left
-        T_left[:3, 3] = tvec_left.flatten()
+        if show:
+                cv2.imshow('Detected markers', image)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
 
-        T_right = np.eye(4)
-        T_right[:3, :3] = R_right
-        T_right[:3, 3] = tvec_right.flatten()
+    def calculate_relative_pose(self, T_left, T_right):
+        """
+        Calculate the relative pose between two cameras given their transformation matrices.
+        """
+        # Calculate the relative transformation: T_right_to_left = T_left^-1 * T_right
+        T_left_inv = np.linalg.inv(T_left)  # Invert the transformation matrix of the left camera
+        T_right_to_left = T_right  @ T_left_inv  # Compute the relative transformation (right to left)
+        
+        R_relative = np.eye(3) # Extract the rotation matrix from the relative transformation
+        t_relative = T_right_to_left[:3, 3]  # Extract the translation vector from the relative transformation
 
-        # Calcule a transformação relativa: T_right_to_left = T_left^-1 * T_right
-        T_left_inv = np.linalg.inv(T_left)
-        T_right_to_left = T_left_inv @ T_right  # Certifique-se de que a ordem está correta
-
-        print("T_left:")
-        print(T_left)
-        print("T_right:")
-        print(T_right)
-        print("T_right_to_left:")
-        print(T_right_to_left)
-
-        # Extraia a rotação e translação relativas
-        R_relative = np.eye(3)
-        t_relative = T_right_to_left[:3, 3]
+        print(f"R_relative:\n{R_relative}")
+        print(f"T_relative:\n{t_relative}")
 
         return R_relative, t_relative
 
     def plot_camera_axes(self, R, t, ax, label):
         # Define os eixos da câmera no sistema de coordenadas local
-        axes_length = 0.1  # Comprimento dos eixos
+        axes_length = self.markers_size/1000  # Comprimento dos eixos ajustado pela escala
         origin = t.flatten()
         x_axis = origin + R[:, 0] * axes_length
         y_axis = origin + R[:, 1] * axes_length
@@ -200,4 +191,10 @@ class ExtrinsicCalib:
         ax.set_zlabel('Z')
         ax.set_title('Relative Pose of Cameras')
         ax.legend()
+
+        # Ajustar os limites dos eixos para aumentar o tamanho do mapa 3D
+        ax.set_xlim([-2, 1])  # Ajuste os valores conforme necessário
+        ax.set_ylim([-1, 1])
+        ax.set_zlim([-1, 1])
+
         plt.show()
