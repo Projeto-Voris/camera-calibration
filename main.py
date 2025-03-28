@@ -31,12 +31,12 @@ def charuco_calibration():
     print('debugger')
 
 def aruco_markers():
-    yaml_file = './camera_parameters/calibration_params.yaml'
+    yaml_file = './camera_parameters/sm3_matlab.yaml'
     extrinsic = ExtrinsicCalib(yaml_file, markers_size=95)
     extrinsic.read_yaml_file(yaml_file)
 
     # Caminho para as imagens
-    path = '/home/tiago/Downloads/20250320-20250325T195737Z-001/20250320'
+    path = '/home/daniel/Insync/daniel.regner@labmetro.ufsc.br/Google Drive - Shared drives/VORIS - Media/Experimentos/Calib Extrinseca/20250320'
     left_images_names = sorted(os.listdir(os.path.join(path, 'left')))
     right_images_names = sorted(os.listdir(os.path.join(path, 'right')))
     left_images = [cv2.imread(os.path.join(path, 'left', image)) for image in left_images_names]
@@ -44,21 +44,26 @@ def aruco_markers():
 
     
     # Detectar os marcadores ArUco nas imagens
-    corners_l, ids_l = extrinsic.detect_aruco_markers(left_images[0])
-    corners_r, ids_r = extrinsic.detect_aruco_markers(right_images[0])
+    for i, (left, right) in enumerate(zip(left_images, right_images)):
+        corners_l, ids_l = extrinsic.detect_aruco_markers(left)
+        corners_r, ids_r = extrinsic.detect_aruco_markers(right)
 
-    print(f"Marcadores ArUco detectados na esquerda: {ids_l.flatten()}")
-    print(f"Marcadores ArUco detectados na direita: {ids_r.flatten()}")
+        print("Detected marker id {} img L {}:".format(ids_l.flatten(), i))
+        print("Detected marker id {} img R {}:".format(ids_r.flatten(), i))
 
     # extrinsic.show_detected_markers(left_images[0], corners_l, ids_l)
     # extrinsic.show_detected_markers(right_images[0], corners_r, ids_r)
 
     # Estimar a pose para os marcadores detectados
-    extrinsic.pose_estimation(ids_l.flatten(), corners_l, camera='left', image=left_images[0], show=True)
-    extrinsic.pose_estimation(ids_r.flatten(), corners_r, camera='right', image=right_images[0], show=True)
+        extrinsic.pose_estimation(ids_l.flatten(), corners_l, camera='left', image=left, show=True)
+        extrinsic.pose_estimation(ids_r.flatten(), corners_r, camera='right', image=right, show=True)
+
+
     # Acessar os dados armazenados
     data = extrinsic.data
 
+    tm0l = extrinsic.transform_precision(data['left'][1]['translation_matrix'])
+    tm0r = extrinsic.transform_precision(data['right'][1]['translation_matrix'])
 
     # Calcular a pose relativa entre as câmeras usando o primeiro marcador detectado
     for marker_id in data['left'].keys():
@@ -71,7 +76,7 @@ def aruco_markers():
 
             # Visualizar a pose relativa para o marcador atual
             print(f"Marker ID: {marker_id}")
-            extrinsic.visualize_relative_pose(R_relative, t_relative)
+            extrinsic.transform_precision()
 
 if __name__ == '__main__':
     # charuco_calibration()

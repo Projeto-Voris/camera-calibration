@@ -97,7 +97,7 @@ class ExtrinsicCalib:
 
     def pose_estimation (self, ids, corners, camera: str,image, show=True ):
 
-        for i in range(len(ids)):
+        for i, ids in enumerate(ids):
             # Ensure i is an integer
             corner = corners[i]
             
@@ -118,7 +118,7 @@ class ExtrinsicCalib:
                 distCoeffs=self.camera_params[camera]['kc'],
                 flags=cv2.SOLVEPNP_IPPE_SQUARE
             )
-            if show:
+            if show and ids == 1:
                 image = cv2.drawFrameAxes(
                     image=image, 
                     cameraMatrix=self.camera_params[camera]['kk'],
@@ -130,19 +130,18 @@ class ExtrinsicCalib:
 
             if success:
 
-                self.data[camera].setdefault(i, {'rvec': [], 'tvec': []})
                 rot_matrix, _ = cv2.Rodrigues(rvec)
                 translation_matrix = np.eye(4)
                 translation_matrix[:3, :3] = rot_matrix
                 translation_matrix[:3, 3] = tvec.flatten()
 
-                if 'translation_matrix' not in self.data[camera][i]:
-                    self.data[camera][i]['translation_matrix'] = []
+                if 'translation_matrix' not in self.data[camera][ids]:
+                    self.data[camera][ids]['translation_matrix'] = []
                     
-                self.data[camera][i]['translation_matrix'].append(translation_matrix)
+                self.data[camera][ids]['translation_matrix'].append(translation_matrix)
 
         if show:
-                cv2.imshow('Detected markers', image)
+                cv2.imshow('Detected markers {}'.format(camera), image)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
@@ -151,17 +150,33 @@ class ExtrinsicCalib:
         Calculate the relative pose between two cameras given their transformation matrices.
         """
         # Calculate the relative transformation: T_right_to_left = T_left^-1 * T_right
-        T_left_inv = np.linalg.inv(T_left)  # Invert the transformation matrix of the left camera
-        T_right_to_left = T_right  @ T_left_inv  # Compute the relative transformation (right to left)
+        T_right_inv = np.linalg.inv(T_right)  # Invert the transformation matrix of the left camera
+        T_right_to_left = T_left @ T_right_inv   # Compute the relative transformation (right to left)
         
-        R_relative = np.eye(3) # Extract the rotation matrix from the relative transformation
+        R_relative = T_right_to_left[:3,:3] # Extract the rotation matrix from the relative transformation
         t_relative = T_right_to_left[:3, 3]  # Extract the translation vector from the relative transformation
 
         print(f"R_relative:\n{R_relative}")
         print(f"T_relative:\n{t_relative}")
 
         return R_relative, t_relative
+    
+    def calc_relative_pose_from_markers(self, Tcm1, Tcm2):
+        """
+        Calculate the relative pose between two cameras given the transformation matrices of the cameras and the markers.
+        """
+        # Calculate the relative transformation: T_right_to_left = T_left^-1 * T_right
+        Tcm1_inv = np.linalg.inv(Tcm1)
+        Tm1m2 = Tcm1_inv @ Tcm2
+        
+        R_relative = Tm1m2[:3,:3] # Extract the rotation matrix from the relative transformation
+        t_relative = Tm1m2[:3, 3]  # Extract the translation vector from the relative transformation
 
+        print(f"R_relative:\n{R_relative}")
+        print(f"T_relative:\n{t_relative}")
+
+        return R_relative, t_relative
+        
     def plot_camera_axes(self, R, t, ax, label):
         # Define os eixos da câmera no sistema de coordenadas local
         axes_length = self.markers_size/1000  # Comprimento dos eixos ajustado pela escala
@@ -198,3 +213,19 @@ class ExtrinsicCalib:
         ax.set_zlim([-1, 1])
 
         plt.show()
+
+    def transform_precision(self, transforms):
+        if all(transforms is not None for transforms in transforms):
+            positions = [transform[:3, 3] for transform in transforms]
+            rotations = [cv2.Rodrigues(transform[:3,:3])[0] for transform in transforms]
+
+            pos_range = np.ptp(positions, axis=0)
+            rot_range = np.ptp(rotations, axis=0)
+            print(f"Position range: {np.mean(pos_range)}")
+            print(f"Rotation range: {np.mean(rot_range)}")
+            translation_matrix = np.eye(4)
+            translation_matrix[:3, :3] = cv2.Rodrigues(np.mean(rotations, axis=0))[0]
+            translation_matrix[:3, 3] = np.mean(positions, axis=0).flatten()
+            return translation_matrix
+        else:
+            return False
