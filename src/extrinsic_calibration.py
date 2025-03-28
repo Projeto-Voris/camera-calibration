@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from collections import deque
 
 class ExtrinsicCalib:
-    def __init__(self, yaml_file, markers_ids=[0, 1, 2, 3], markers_size=100, dpi=600, aruco_d: int = cv2.aruco.DICT_5X5_100):
+    def __init__(self, yaml_file, markers_ids=list(range(50)), markers_size=100, dpi=600, aruco_d: int = cv2.aruco.DICT_5X5_100):
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_d)
         if self.aruco_dict is None:
@@ -101,7 +101,7 @@ class ExtrinsicCalib:
             # Ensure i is an integer
             corner = corners[i]
             
-            squareLength = self.markers_size/1000 # Convert to meters
+            squareLength = self.markers_size
 
             # Define the 3D points of the marker corners in the world coordinate space
             marker_points = np.array([
@@ -159,27 +159,26 @@ class ExtrinsicCalib:
         print(f"R_relative:\n{R_relative}")
         print(f"T_relative:\n{t_relative}")
 
-        return R_relative, t_relative
+        return R_relative, t_relative, T_right_to_left
     
-    def calc_relative_pose_from_markers(self, Tcm1, Tcm2):
+    def calc_relative_pose_from_markers(self, Tcm1_list, Tcm2_list):
         """
-        Calculate the relative pose between two cameras given the transformation matrices of the cameras and the markers.
+        Calculate the relative pose between two markers given lists of transformation matrices of the camera and the markers.
         """
-        # Calculate the relative transformation: T_right_to_left = T_left^-1 * T_right
-        Tcm1_inv = np.linalg.inv(Tcm1)
-        Tm1m2 = Tcm1_inv @ Tcm2
-        
-        R_relative = Tm1m2[:3,:3] # Extract the rotation matrix from the relative transformation
-        t_relative = Tm1m2[:3, 3]  # Extract the translation vector from the relative transformation
+        if len(Tcm1_list) != len(Tcm2_list):
+            raise ValueError("Tcm1_list and Tcm2_list must have the same length.")
 
-        print(f"R_relative:\n{R_relative}")
-        print(f"T_relative:\n{t_relative}")
+        Tm1m2_list = []
+        for Tcm1, Tcm2 in zip(Tcm1_list, Tcm2_list):
+            Tcm1_inv = np.linalg.inv(Tcm1)
+            Tm1m2 = Tcm1_inv @ Tcm2
+            Tm1m2_list.append(Tm1m2)
 
-        return R_relative, t_relative
+        return Tm1m2_list
         
     def plot_camera_axes(self, R, t, ax, label):
         # Define os eixos da câmera no sistema de coordenadas local
-        axes_length = self.markers_size/1000  # Comprimento dos eixos ajustado pela escala
+        axes_length = self.markers_size # Comprimento dos eixos ajustado pela escala
         origin = t.flatten()
         x_axis = origin + R[:, 0] * axes_length
         y_axis = origin + R[:, 1] * axes_length
@@ -194,11 +193,13 @@ class ExtrinsicCalib:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
 
+        midpoint_rotation = cv2.Rodrigues(cv2.Rodrigues(R_relative)[0] / 2)[0]
+
         # Origem da câmera esquerda
-        self.plot_camera_axes(np.eye(3), np.zeros((3, 1)), ax, label='Left Camera')
+        self.plot_camera_axes(midpoint_rotation.T, np.zeros((3, 1)), ax, label='Left Camera')
 
         # Origem da câmera direita (relativa à esquerda)
-        self.plot_camera_axes(R_relative, t_relative, ax, label='Right Camera')
+        self.plot_camera_axes(midpoint_rotation, t_relative, ax, label='Right Camera')
 
         # Configurações do gráfico
         ax.set_xlabel('X')
@@ -208,9 +209,10 @@ class ExtrinsicCalib:
         ax.legend()
 
         # Ajustar os limites dos eixos para aumentar o tamanho do mapa 3D
-        ax.set_xlim([-2, 1])  # Ajuste os valores conforme necessário
-        ax.set_ylim([-1, 1])
-        ax.set_zlim([-1, 1])
+        lim_size = 500
+        ax.set_xlim([-lim_size, lim_size])  # Ajuste os valores conforme necessário
+        ax.set_ylim([-lim_size, lim_size])
+        ax.set_zlim([-lim_size, lim_size])
 
         plt.show()
 
@@ -218,6 +220,12 @@ class ExtrinsicCalib:
         if all(transforms is not None for transforms in transforms):
             positions = [transform[:3, 3] for transform in transforms]
             rotations = [cv2.Rodrigues(transform[:3,:3])[0] for transform in transforms]
+
+            # Ensure positions is a NumPy array
+            positions = np.array(positions)
+
+            if positions.size == 0:
+                raise ValueError("The positions array is empty.")
 
             pos_range = np.ptp(positions, axis=0)
             rot_range = np.ptp(rotations, axis=0)
