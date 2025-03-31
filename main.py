@@ -1,5 +1,5 @@
 import os.path
-
+import numpy as np
 import cv2
 from src.charuco_calibration import CharucoCalibration
 from src.extrinsic_calibration import ExtrinsicCalib
@@ -32,11 +32,11 @@ def charuco_calibration():
 
 def aruco_markers():
     yaml_file = './camera_parameters/calibration_params.yaml'
-    extrinsic = ExtrinsicCalib(yaml_file, markers_size=60)
+    extrinsic = ExtrinsicCalib(yaml_file, markers_size=95)
     extrinsic.read_yaml_file(yaml_file)
 
     # Caminho para as imagens
-    path = '/home/tiago/Downloads/20250320-20250325T195737Z-001/20250320'
+    path = './images/20250320'
     left_images_names = sorted(os.listdir(os.path.join(path, 'left')))
     right_images_names = sorted(os.listdir(os.path.join(path, 'right')))
     left_images = [cv2.imread(os.path.join(path, 'left', image)) for image in left_images_names]
@@ -64,20 +64,21 @@ def aruco_markers():
 
     T_relative_list = []
 
+    valid_markers = extrinsic.get_valid_markers()
     # Calcular a pose relativa entre as câmeras usando o primeiro marcador detectado
-    for marker_id in data['left'].keys():
-        if marker_id in data['right']:
-            tm0l = extrinsic.transform_precision(data['left'][marker_id]['translation_matrix'])
-            tm0r = extrinsic.transform_precision(data['right'][marker_id]['translation_matrix'])
+    for marker_id in valid_markers:
+        T_l_m0 = extrinsic.transform_precision(data['left'][marker_id]['translation_matrix'])
+        T_r_m0 = extrinsic.transform_precision(data['right'][marker_id]['translation_matrix'])
 
-            # Calcular a pose relativa entre as câmeras para o marcador atual
-            R_relative, t_relative, T_relative = extrinsic.calculate_relative_pose(tm0l, tm0r)
+        # Calcular a pose relativa entre as câmeras para o marcador atual
+        R_relative, t_relative, T_relative = extrinsic.calculate_relative_pose(T_l_m0, T_r_m0)
 
-            T_relative_list.append(T_relative)
+        T_relative_list.append(T_relative)
 
-            # Visualizar a pose relativa para o marcador atual
-            print(f"Marker ID: {marker_id}")
-            extrinsic.visualize_relative_pose(R_relative, t_relative)
+        # Visualizar a pose relativa para o marcador atual
+        print(f"Marker ID: {marker_id}")
+        extrinsic.visualize_relative_pose(R_relative, t_relative, title="Marker ID: {}".format(marker_id))
+
 
         print('precision relative transform:')
         extrinsic.transform_precision(T_relative_list)
