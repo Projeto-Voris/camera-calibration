@@ -104,7 +104,7 @@ class ExtrinsicCalib:
                and self.data['right'][marker_id]['translation_matrix']
         ]
 
-        print(valid_markers)
+        # print(valid_markers)
         return valid_markers
 
     def pose_estimation(self, ids, corners, camera: str, image, show=True):
@@ -177,8 +177,8 @@ class ExtrinsicCalib:
         R_relative = T_1_0[:3, :3]  # Extract the rotation matrix from the relative transformation
         t_relative = T_1_0[:3, 3]  # Extract the translation vector from the relative transformation
 
-        print(f"R_relative:\n{R_relative}")
-        print(f"T_relative:\n{t_relative}")
+        # print(f"R_relative:\n{R_relative}")
+        # print(f"T_relative:\n{t_relative}")
 
         return R_relative, t_relative, T_1_0
 
@@ -263,14 +263,14 @@ class ExtrinsicCalib:
         ax1.set_xlabel('X')
         ax1.set_ylabel('Y')
         ax1.set_zlabel('Z')
-        ax1.set_title('Full 3D View')
+        ax1.set_title('Full 3D View \n {}'.format(title))
 
         # Configurações das projeções 2D
-        ax2.set_xlabel('X')
-        ax2.set_ylabel('Y')
+        ax2.set_xlabel('X [mm]')
+        ax2.set_ylabel('Y [mm]')
         ax2.set_title('Top View (XY)')
-        ax3.set_xlabel('X')
-        ax3.set_ylabel('Z')
+        ax3.set_xlabel('X [mm]')
+        ax3.set_ylabel('Z [mm]')
         ax3.set_title('Side View (XZ)')
 
         # **Cálculo automático dos limites compactos**
@@ -294,11 +294,13 @@ class ExtrinsicCalib:
         ax3.set_xlim(get_limits(0, t_relative[0]))
         ax3.set_ylim(get_limits(0, t_relative[2]))
         ax3.legend()
+
         plt.tight_layout()
         plt.show()
 
 
     def transform_precision(self, transforms):
+
         if all(transforms is not None for transforms in transforms):
             positions = [transform[:3, 3] for transform in transforms]
             rotations = [cv2.Rodrigues(transform[:3, :3])[0] for transform in transforms]
@@ -311,11 +313,14 @@ class ExtrinsicCalib:
 
             pos_range = np.ptp(positions, axis=0)
             rot_range = np.ptp(rotations, axis=0)
-            print(f"Position range: {np.mean(pos_range)}")
-            print(f"Rotation range: {np.mean(rot_range)}")
+            # print(f"Position range: {np.mean(pos_range)}")
+            # print(f"Rotation range: {np.mean(rot_range)}")
+            # if np.mean(pos_range) > 0.5:
+            #     print("Transformations are not precise enough.")
+            #     return None
             translation_matrix = np.eye(4)
             translation_matrix[:3, :3] = cv2.Rodrigues(np.mean(rotations, axis=0))[0]
             translation_matrix[:3, 3] = np.mean(positions, axis=0).flatten()
             return translation_matrix
         else:
-            return False
+            return
