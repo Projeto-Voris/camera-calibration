@@ -8,7 +8,7 @@ from collections import deque
 
 class ExtrinsicCalib:
     def __init__(self, yaml_file, markers_ids=list(range(50)), markers_size=100, dpi=600,
-                 aruco_d: int = cv2.aruco.DICT_5X5_100):
+                 aruco_d: int = cv2.aruco.DICT_4X4_50):
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_d)
         if self.aruco_dict is None:
@@ -79,7 +79,7 @@ class ExtrinsicCalib:
             cv2.imwrite(os.path.join(markers_path, f'aruco_marker_{marker_id}_a4.png'), a4_image)
 
     def detect_aruco_markers(self, image):
-        if len(image.shape) == 2:
+        if len(image.shape) == 3:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         corners, ids, _ = cv2.aruco.detectMarkers(image, self.aruco_dict)
@@ -108,12 +108,13 @@ class ExtrinsicCalib:
         return valid_markers
 
     def pose_estimation(self, ids, corners, camera: str, image, show=True):
-        image = cv2.aruco.drawDetectedMarkers(image, corners, ids)
-
-        for i, ids in enumerate(ids):
-            # Ensure i is an integer
+        
+        # print(f"id: {ids} ")
+        for i, id in enumerate(ids):
             corner = corners[i]
-
+            # print(f"Detected marker id {id}")
+            marker_id = id.flatten()[0]
+            
             # Define the 3D points of the marker corners in the world coordinate space
             marker_points = np.array([
                 [-self.markers_size / 2, self.markers_size / 2, 0],
@@ -140,6 +141,8 @@ class ExtrinsicCalib:
                     thickness=2)
 
             if success:
+                image = cv2.aruco.drawDetectedMarkers(image, corners, ids)
+                cv2.drawFrameAxes(image, self.camera_params[camera]['kk'], self.camera_params[camera]['kc'], rvec, tvec, self.markers_size/2)
                 rvec_refined, tvec_refined = cv2.solvePnPRefineLM(objectPoints=marker_points,
                                                       imagePoints=corner,
                                                       cameraMatrix=self.camera_params[camera]['kk'],
@@ -153,10 +156,10 @@ class ExtrinsicCalib:
                 translation_matrix[:3, :3] = rot_matrix
                 translation_matrix[:3, 3] = tvec_refined.flatten()
 
-            if 'translation_matrix' not in self.data[camera][ids]:
-                self.data[camera][ids]['translation_matrix'] = []
+            if 'translation_matrix' not in self.data[camera][marker_id]:
+                self.data[camera][marker_id]['translation_matrix'] = []
 
-            self.data[camera][ids]['translation_matrix'].append(translation_matrix)
+            self.data[camera][marker_id]['translation_matrix'].append(translation_matrix)
 
         if show:
             cv2.namedWindow('Detected markers {}'.format(camera), cv2.WINDOW_NORMAL)
@@ -168,17 +171,33 @@ class ExtrinsicCalib:
 
     def calculate_relative_pose(self, T_0_2, T_1_2):
         """
-        Calculate the relative pose between two cameras given their transformation matrices.
-        """
-        # Calculate the relative transformation: T_right_to_left =  T_right @ T_left^-1
-        T_2_1 = np.linalg.inv(T_1_2)  # Invert the transformation matrix of the left camera
-        T_1_0 = T_0_2 @ T_2_1  # Compute the relative transformation (right to left)
+        Calculate the relative pose between two cameras given their transformation matrices,
+        separating rotation and translation calculations.
+         """
+        # print(f"T_0_2:\n{T_0_2}")
+        # print(f"T_1_2:\n{T_1_2}")
 
-        R_relative = T_1_0[:3, :3]  # Extract the rotation matrix from the relative transformation
-        t_relative = T_1_0[:3, 3]  # Extract the translation vector from the relative transformation
+        # Invert the transformation matrix of the left camera
+        T_2_1 = np.linalg.inv(T_1_2)
+        # print(f"T_2_1:\n{T_2_1}")
 
+        # Compute the relative transformation (right to left)
+        T_1_0 = T_0_2 @ T_2_1
+        # print(f"T_1_0:\n{T_1_0}")
+
+        # Extract rotation and translation components
+        R_0_2 = T_0_2[:3, :3]
+        t_0_2 = T_0_2[:3, 3]
+        R_1_2 = T_1_2[:3, :3]
+        t_1_2 = T_1_2[:3, 3]
+
+        # Compute relative rotation
+        R_relative = R_0_2 @ R_1_2.T
         # print(f"R_relative:\n{R_relative}")
-        # print(f"T_relative:\n{t_relative}")
+
+        # Compute relative translation
+        t_relative = t_0_2 - R_relative @ t_1_2
+        print(f"t_relative:\n{t_relative}")
 
         return R_relative, t_relative, T_1_0
 
@@ -197,7 +216,6 @@ class ExtrinsicCalib:
             Tm1m2_list.append(Tm1m2)
 
         return Tm1m2_list
-
 
     def plot_camera_axes(self, R, t, ax, label, is_3d=True, projection_plane="XY"):
         """
@@ -313,14 +331,15 @@ class ExtrinsicCalib:
 
             pos_range = np.ptp(positions, axis=0)
             rot_range = np.ptp(rotations, axis=0)
-            # print(f"Position range: {np.mean(pos_range)}")
-            # print(f"Rotation range: {np.mean(rot_range)}")
-            # if np.mean(pos_range) > 0.5:
-            #     print("Transformations are not precise enough.")
-            #     return None
-            translation_matrix = np.eye(4)
-            translation_matrix[:3, :3] = cv2.Rodrigues(np.mean(rotations, axis=0))[0]
-            translation_matrix[:3, 3] = np.mean(positions, axis=0).flatten()
-            return translation_matrix
+            print(f"Position range: {np.mean(pos_range)}")
+            print(f"Rotation range: {np.mean(rot_range)}")
+            if np.mean(pos_range) > 0.6:
+                print("Transformations are not precise enough.")
+                return None
+            else:
+                translation_matrix = np.eye(4)
+                translation_matrix[:3, :3] = cv2.Rodrigues(np.mean(rotations, axis=0))[0]
+                translation_matrix[:3, 3] = np.mean(positions, axis=0).flatten()
+                return translation_matrix
         else:
             return
