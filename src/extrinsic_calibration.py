@@ -8,7 +8,7 @@ from collections import deque
 
 class ExtrinsicCalib:
     def __init__(self, yaml_file, markers_ids=list(range(50)), markers_size=100, dpi=600,
-                 aruco_d: int = cv2.aruco.DICT_4X4_50):
+                 aruco_d: int = cv2.aruco.DICT_5X5_100):
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_d)
         if self.aruco_dict is None:
@@ -16,6 +16,14 @@ class ExtrinsicCalib:
         self.markers_ids = markers_ids  # list of markers ids
         self.markers_size = markers_size  # in millimeters
         self.dpi = dpi
+
+        if len(markers_size) > 1:
+            self.charuco_board = cv2.aruco.CharucoBoard(
+                size=(12, 8),
+                squareLength=markers_size[0],
+                markerLength=markers_size[1],
+                dictionary=self.aruco_dict)
+
 
         self.camera_params = {
             'left': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([])},
@@ -89,6 +97,47 @@ class ExtrinsicCalib:
             return corners, ids
 
         return corners, ids
+
+    def detect_charuco_board(self, image):
+        """
+        Detect the Charuco board in the image and retrieve the corners and ids of the markers.
+        """
+        if len(image.shape) == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        corners, ids, _ = cv2.aruco.detectMarkers(image=image, dictionary=self.aruco_dict)
+        response, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(markerCorners=corners,
+                                                                                             markerIds=ids,
+                                                                                             image=image,
+                                                                                             board=self.charuco_board)
+        if charuco_ids is None:
+            print("Nenhum marcador Charuco detectado.")
+            return None, None
+        return charuco_corners, charuco_ids
+
+    def match_charuco_points(self, charuco_corners, charuco_ids):
+        """
+        Match the detected Charuco corners with their corresponding ids.
+        """
+        obj_points, img_points = self.charuco_board.matchImagePoints(detectedCorners=charuco_corners, detectedIds=charuco_ids)
+        return obj_points, img_points
+    
+    def pose_estimation_charuco(self, camera: str, obj_points, img_points):
+        """
+        Perform pose estimation using the detected Charuco corners and ids.
+        """
+        success, rvec, tvec = cv2.solvePnP(
+            objectPoints=obj_points,
+            imagePoints=img_points,
+            cameraMatrix=self.camera_params[camera]['kk'],
+            distCoeffs=self.camera_params[camera]['kc'],
+            flags=cv2.SOLVEPNP_IPPE)
+        if success:
+            T = np.eye(4)
+            T[:3, :3], _ = cv2.Rodrigues(rvec)
+            T[:3, 3] = tvec.flatten()
+            return rvec, tvec, T
+        return None, None, None
 
     def show_detected_markers(self, image, corners, ids):
         image = cv2.aruco.drawDetectedMarkers(image, corners, ids)
@@ -168,8 +217,7 @@ class ExtrinsicCalib:
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
-
-    def calculate_relative_pose_1to0(self, T_0_2, T_1_2):
+    def calculate_relative_pose(self, T_0_2, T_1_2):
         """
         Calculate the relative pose between two cameras given their transformation matrices,
         separating rotation and translation calculations.
@@ -197,10 +245,6 @@ class ExtrinsicCalib:
 
         # Compute relative translation
         t_relative = t_0_2 - R_relative @ t_1_2
-        print("1 to 0")
-        print(f"t_relative:\n{T_1_0[:3,3].flatten()}")
-        print(f"r_relative:\n{T_1_0[:3,:3]}")
-        # print(f"T_1_0:\n{T_1_0}")
 
         return R_relative, t_relative, T_1_0
     
@@ -238,7 +282,6 @@ class ExtrinsicCalib:
         # print(f"T_0_1:\n{T_0_1}")
 
         return R_relative, t_relative, T_0_1
-
 
     def calc_relative_pose_from_markers(self, Tcm1_list, Tcm2_list):
         """
@@ -289,7 +332,6 @@ class ExtrinsicCalib:
                 ax.quiver(origin[0], origin[1], y_axis[0] - origin[1], y_axis[2] - origin[2], color='g')
                 ax.quiver(origin[0], origin[2], z_axis[0] - origin[0], z_axis[2] - origin[2], color='b')
         ax.grid(True)
-
 
     def visualize_relative_pose(self, R_relative, t_relative, title='Camera pose'):
         fig = plt.figure(figsize=(12, 6))
@@ -353,7 +395,6 @@ class ExtrinsicCalib:
 
         plt.tight_layout()
         plt.show()
-
 
     def transform_precision(self, transforms):
 
