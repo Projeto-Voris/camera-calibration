@@ -182,8 +182,8 @@ def charuco_markers():
         corners_r, ids_r = extrinsic.detect_charuco_board(right)
         obj_l, img_l = extrinsic.match_charuco_points(corners_l, ids_l)
         obj_r, img_r = extrinsic.match_charuco_points(corners_r, ids_r)
-        rvec_l, tvec_l, T_L = extrinsic.pose_estimation_charuco(obj_l, img_l, camera='left')
-        rvec_r, tvec_r, T_R = extrinsic.pose_estimation_charuco(obj_r, img_r, camera='right')
+        rvec_l, tvec_l, T_L = extrinsic.pose_estimation_charuco(camera='left', obj_points=obj_l, img_points=img_l)
+        rvec_r, tvec_r, T_R = extrinsic.pose_estimation_charuco(camera='right', obj_points=obj_r, img_points=img_r)
 
         # Calculate relative pose
         _,_, T_relative = extrinsic.calculate_relative_pose(T_L, T_R)

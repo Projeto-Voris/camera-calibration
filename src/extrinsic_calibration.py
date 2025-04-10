@@ -119,7 +119,7 @@ class ExtrinsicCalib:
         """
         Match the detected Charuco corners with their corresponding ids.
         """
-        obj_points, img_points = cv2.aruco.Board.matchImagePoints(detectedCorners=charuco_corners, detectedIds=charuco_ids)
+        obj_points, img_points = self.charuco_board.matchImagePoints(detectedCorners=charuco_corners, detectedIds=charuco_ids)
         return obj_points, img_points
     
     def pose_estimation_charuco(self, camera: str, obj_points, img_points):
