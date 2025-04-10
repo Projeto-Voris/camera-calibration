@@ -161,8 +161,37 @@ def multi_aruco_markers():
         # # Calcular a pose relativa entre os marcadores
         # extrinsic.visualize_relative_pose(T_mean[:3,:3], T_mean[:3,3].flatten(), title="Mean Relative Pose")
 
+def charuco_markers():
+    yaml_file = './camera_parameters/sm3_matlab.yaml'
+    extrinsic = ExtrinsicCalib(yaml_file, markers_size=(28, 18))
+    extrinsic.read_yaml_file(yaml_file)
+
+    # Caminho para as imagens
+    path = '/home/daniel/Insync/daniel.regner@labmetro.ufsc.br/Google Drive - Shared drives/VORIS - Media/Experimentos/Calib Extrinseca/20250311/S1'
+    
+    left_images_names = sorted(os.listdir(os.path.join(path, 'left')))
+    right_images_names = sorted(os.listdir(os.path.join(path, 'right')))
+    left_images = [cv2.imread(os.path.join(path, 'left', image)) for image in left_images_names]
+    right_images = [cv2.imread(os.path.join(path, 'right', image)) for image in right_images_names]
+
+    
+    # Detectar os marcadores ArUco nas imagens
+    for i, (left, right) in enumerate(zip(left_images, right_images)):
+        T_relative = []
+        corners_l, ids_l = extrinsic.detect_charuco_board(left)
+        corners_r, ids_r = extrinsic.detect_charuco_board(right)
+        obj_l, img_l = extrinsic.match_charuco_points(corners_l, ids_l)
+        obj_r, img_r = extrinsic.match_charuco_points(corners_r, ids_r)
+        rvec_l, tvec_l, T_L = extrinsic.pose_estimation_charuco(obj_l, img_l, camera='left')
+        rvec_r, tvec_r, T_R = extrinsic.pose_estimation_charuco(obj_r, img_r, camera='right')
+
+        # Calculate relative pose
+        _,_, T_relative = extrinsic.calculate_relative_pose(T_L, T_R)
+        print("====== Img: {} ======".format(i))
+        print(T_relative)
 
 if __name__ == '__main__':
     # charuco_calibration()
-    aruco_markers()
+    # aruco_markers()
     # multi_aruco_markers()
+    charuco_markers()

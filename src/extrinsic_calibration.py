@@ -8,7 +8,7 @@ from collections import deque
 
 class ExtrinsicCalib:
     def __init__(self, yaml_file, markers_ids=list(range(50)), markers_size=100, dpi=600,
-                 aruco_d: int = cv2.aruco.DICT_4X4_50):
+                 aruco_d: int = cv2.aruco.DICT_5X5_100):
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_d)
         if self.aruco_dict is None:
@@ -16,6 +16,14 @@ class ExtrinsicCalib:
         self.markers_ids = markers_ids  # list of markers ids
         self.markers_size = markers_size  # in millimeters
         self.dpi = dpi
+
+        if len(markers_size) > 1:
+            self.charuco_board = cv2.aruco.CharucoBoard(
+                size=(12, 8),
+                squareLength=markers_size[0],
+                markerLength=markers_size[1],
+                dictionary=self.aruco_dict)
+
 
         self.camera_params = {
             'left': {'kk': np.array([]), 'kc': np.array([]), 'r': np.array([]), 't': np.array([])},
@@ -89,6 +97,47 @@ class ExtrinsicCalib:
             return corners, ids
 
         return corners, ids
+
+    def detect_charuco_board(self, image):
+        """
+        Detect the Charuco board in the image and retrieve the corners and ids of the markers.
+        """
+        if len(image.shape) == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        corners, ids, _ = cv2.aruco.detectMarkers(image=image, dictionary=self.aruco_dict)
+        response, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(markerCorners=corners,
+                                                                                             markerIds=ids,
+                                                                                             image=image,
+                                                                                             board=self.charuco_board)
+        if charuco_ids is None:
+            print("Nenhum marcador Charuco detectado.")
+            return None, None
+        return charuco_corners, charuco_ids
+
+    def match_charuco_points(self, charuco_corners, charuco_ids):
+        """
+        Match the detected Charuco corners with their corresponding ids.
+        """
+        obj_points, img_points = cv2.aruco.Board.matchImagePoints(detectedCorners=charuco_corners, detectedIds=charuco_ids)
+        return obj_points, img_points
+    
+    def pose_estimation_charuco(self, camera: str, obj_points, img_points):
+        """
+        Perform pose estimation using the detected Charuco corners and ids.
+        """
+        success, rvec, tvec = cv2.solvePnP(
+            objectPoints=obj_points,
+            imagePoints=img_points,
+            cameraMatrix=self.camera_params[camera]['kk'],
+            distCoeffs=self.camera_params[camera]['kc'],
+            flags=cv2.SOLVEPNP_IPPE)
+        if success:
+            T = np.eye(4)
+            T[:3, :3], _ = cv2.Rodrigues(rvec)
+            T[:3, 3] = tvec.flatten()
+            return rvec, tvec, T
+        return None, None, None
 
     def show_detected_markers(self, image, corners, ids):
         image = cv2.aruco.drawDetectedMarkers(image, corners, ids)
