@@ -4,6 +4,13 @@ import cv2
 from src.charuco_calibration import CharucoCalibration
 from src.extrinsic_calibration import ExtrinsicCalib
 
+def load_images(path, cameras=('left', 'right')):
+    images = {}
+    for camera in cameras:
+        camera_path = os.path.join(path, camera)
+        images[camera] = [cv2.imread(os.path.join(camera_path, img)) for img in sorted(os.listdir(camera_path))]
+    return images
+
 def charuco_calibration():
     charuco = CharucoCalibration(squares=(12, 8), marker_size=(28, 18))  # Sent to print
     # charuco = charuco_calibration.CharucoCalibration(squares=(5, 10), dpi=600, paper_size=(297, 210), marker_size=(30, 20)) # images 21/10
@@ -16,14 +23,14 @@ def charuco_calibration():
 
     # cv2.imwrite('charuco_a3_600dpi.png', board_img)
 
-    images_path = '/home/tiago/Downloads/20250320-20250325T195737Z-001/20250320'
+    images_path = '/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/S2'
     charuco.load_image(images_path=images_path, visualize=False)
     charuco.detect_charuco_board(camera='left', visualize=True)
     charuco.detect_charuco_board(camera='right', visualize=True)
     charuco.calibration_camera(camera='left')
     charuco.calibration_camera(camera='right')
     charuco.stereo_calibration()
-    charuco.save_camera_params(path='./camera_parameters/sm3_charuco.yaml')
+    charuco.save_camera_params(path='./camera_parameters/sm4_matlab.yaml')
     print('debug')
     # charuco.show_undistorted_image(camera='left')
     charuco.homogeneous_matrix(camera='left', visualize=False)
@@ -38,12 +45,10 @@ def aruco_markers():
     # Caminho para as imagens
     path = '/home/tiago/Pictures/image_logs/SM3/20250404_1_2_3'
     
-    left_images_names = sorted(os.listdir(os.path.join(path, 'left')))
-    right_images_names = sorted(os.listdir(os.path.join(path, 'right')))
-    left_images = [cv2.imread(os.path.join(path, 'left', image)) for image in left_images_names]
-    right_images = [cv2.imread(os.path.join(path, 'right', image)) for image in right_images_names]
+    images = load_images(path)
+    left_images = images['left']
+    right_images = images['right']
 
-    
     # Detectar os marcadores ArUco nas imagens
     for i, (left, right) in enumerate(zip(left_images, right_images)):
         corners_l, ids_l = extrinsic.detect_aruco_markers(left)
@@ -102,12 +107,10 @@ def multi_aruco_markers():
             extrinsic = ExtrinsicCalib(yaml_file, markers_size=95)
             extrinsic.read_yaml_file(yaml_file)
 
-        left_images_names = sorted(os.listdir(os.path.join(path, 'left')))
-        right_images_names = sorted(os.listdir(os.path.join(path, 'right')))
-        left_images = [cv2.imread(os.path.join(path, 'left', image)) for image in left_images_names]
-        right_images = [cv2.imread(os.path.join(path, 'right', image)) for image in right_images_names]
+        images = load_images(path)
+        left_images = images['left']
+        right_images = images['right']
 
-        
         # Detectar os marcadores ArUco nas imagens
         for i, (left, right) in enumerate(zip(left_images, right_images)):
             corners_l, ids_l = extrinsic.detect_aruco_markers(left)
@@ -162,19 +165,17 @@ def multi_aruco_markers():
         # extrinsic.visualize_relative_pose(T_mean[:3,:3], T_mean[:3,3].flatten(), title="Mean Relative Pose")
 
 def charuco_markers():
-    yaml_file = './camera_parameters/sm3_matlab.yaml'
+    yaml_file = './camera_parameters/sm3_charuco.yaml'
     extrinsic = ExtrinsicCalib(yaml_file, markers_size=(28, 18))
     extrinsic.read_yaml_file(yaml_file)
 
     # Caminho para as imagens
-    path = '/home/daniel/Insync/daniel.regner@labmetro.ufsc.br/Google Drive - Shared drives/VORIS - Media/Experimentos/Calib Extrinseca/20250311/S1'
+    path = '/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/S1'
     
-    left_images_names = sorted(os.listdir(os.path.join(path, 'left')))
-    right_images_names = sorted(os.listdir(os.path.join(path, 'right')))
-    left_images = [cv2.imread(os.path.join(path, 'left', image)) for image in left_images_names]
-    right_images = [cv2.imread(os.path.join(path, 'right', image)) for image in right_images_names]
+    images = load_images(path)
+    left_images = images['left']
+    right_images = images['right']
 
-    
     # Detectar os marcadores ArUco nas imagens
     for i, (left, right) in enumerate(zip(left_images, right_images)):
         T_relative = []
@@ -188,7 +189,8 @@ def charuco_markers():
         # Calculate relative pose
         _,_, T_relative = extrinsic.calculate_relative_pose(T_L, T_R)
         print("====== Img: {} ======".format(i))
-        print(T_relative)
+        print(T_relative[:3, 3])
+        extrinsic.visualize_relative_pose(T_relative[:3, :3], T_relative[:3, 3], title="Image: {} path: {}".format(i, path.split('/')[-1]))
 
 if __name__ == '__main__':
     # charuco_calibration()

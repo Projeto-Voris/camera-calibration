@@ -217,7 +217,6 @@ class ExtrinsicCalib:
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
-
     def calculate_relative_pose(self, T_0_2, T_1_2):
         """
         Calculate the relative pose between two cameras given their transformation matrices,
@@ -246,10 +245,8 @@ class ExtrinsicCalib:
 
         # Compute relative translation
         t_relative = t_0_2 - R_relative @ t_1_2
-        print(f"t_relative:\n{t_relative}")
 
         return R_relative, t_relative, T_1_0
-
 
     def calc_relative_pose_from_markers(self, Tcm1_list, Tcm2_list):
         """
@@ -300,7 +297,6 @@ class ExtrinsicCalib:
                 ax.quiver(origin[0], origin[1], y_axis[0] - origin[1], y_axis[2] - origin[2], color='g')
                 ax.quiver(origin[0], origin[2], z_axis[0] - origin[0], z_axis[2] - origin[2], color='b')
         ax.grid(True)
-
 
     def visualize_relative_pose(self, R_relative, t_relative, title='Camera pose'):
         fig = plt.figure(figsize=(12, 6))
@@ -364,7 +360,6 @@ class ExtrinsicCalib:
 
         plt.tight_layout()
         plt.show()
-
 
     def transform_precision(self, transforms):
 
