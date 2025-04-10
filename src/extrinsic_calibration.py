@@ -169,7 +169,7 @@ class ExtrinsicCalib:
             cv2.destroyAllWindows()
 
 
-    def calculate_relative_pose(self, T_0_2, T_1_2):
+    def calculate_relative_pose_1to0(self, T_0_2, T_1_2):
         """
         Calculate the relative pose between two cameras given their transformation matrices,
         separating rotation and translation calculations.
@@ -197,9 +197,47 @@ class ExtrinsicCalib:
 
         # Compute relative translation
         t_relative = t_0_2 - R_relative @ t_1_2
-        print(f"t_relative:\n{t_relative}")
+        print("1 to 0")
+        print(f"t_relative:\n{T_1_0[:3,3].flatten()}")
+        print(f"r_relative:\n{T_1_0[:3,:3]}")
+        # print(f"T_1_0:\n{T_1_0}")
 
         return R_relative, t_relative, T_1_0
+    
+    def calculate_relative_pose_0to1(self, T_0_2, T_1_2):
+        """
+        Calculate the relative pose between two cameras given their transformation matrices,
+        separating rotation and translation calculations.
+         """
+        # print(f"T_0_2:\n{T_0_2}")
+        # print(f"T_1_2:\n{T_1_2}")
+
+        # Invert the transformation matrix of the left camera
+        T_2_0 = np.linalg.inv(T_0_2)
+        # print(f"T_2_1:\n{T_2_1}")
+
+        # Compute the relative transformation (right to left)
+        T_0_1 = T_1_2 @ T_2_0
+        # print(f"T_1_0:\n{T_1_0}")
+
+        # Extract rotation and translation components
+        R_0_2 = T_0_2[:3, :3]
+        t_0_2 = T_0_2[:3, 3]
+        R_1_2 = T_1_2[:3, :3]
+        t_1_2 = T_1_2[:3, 3]
+
+        # Compute relative rotation
+        R_relative = R_0_2 @ R_1_2.T
+        # print(f"R_relative:\n{R_relative}")
+
+        # Compute relative translation
+        t_relative = t_0_2 - R_relative @ t_1_2
+        print("0 to 1")
+        print(f"t_relative:\n{T_0_1[:3,3].flatten()}")
+        print(f"r_relative:\n{T_0_1[:3,:3]}")
+        # print(f"T_0_1:\n{T_0_1}")
+
+        return R_relative, t_relative, T_0_1
 
 
     def calc_relative_pose_from_markers(self, Tcm1_list, Tcm2_list):

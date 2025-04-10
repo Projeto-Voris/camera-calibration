@@ -32,7 +32,7 @@ def charuco_calibration():
 
 def aruco_markers():
     yaml_file = './camera_parameters/sm3_matlab.yaml'
-    extrinsic = ExtrinsicCalib(yaml_file, markers_size=38)
+    extrinsic = ExtrinsicCalib(yaml_file, markers_size=95)
     extrinsic.read_yaml_file(yaml_file)
 
     # Caminho para as imagens
@@ -87,20 +87,26 @@ def aruco_markers():
 def multi_aruco_markers():
 
     # Caminho para as imagens
-    path_full = '/home/tiago/Pictures/image_logs/'
+    path_full = '/home/daniel/Insync/daniel.regner@labmetro.ufsc.br/Google Drive - Shared drives/VORIS - Media/Experimentos/Calib Extrinseca/20250404_multi'
     for folder in os.listdir(path_full):
         path = os.path.join(path_full, folder)
         if folder == "SM3":
-                
+                print('========= SM3 =========')
                 yaml_file = './camera_parameters/sm3_matlab.yaml'
-                extrinsic = ExtrinsicCalib(yaml_file, markers_size=95)
+                extrinsic = ExtrinsicCalib(yaml_file, markers_size=95, aruco_d=cv2.aruco.DICT_5X5_100)
                 extrinsic.read_yaml_file(yaml_file)
+                T_SM3 = np.zeros((4, 4))
+                T_SM3[:3,:3] = extrinsic.camera_params['stereo']['R']
+                T_SM3[:3,3] = extrinsic.camera_params['stereo']['T']
 
         elif folder == "SM2":
-
+            print('========= SM2 =========')
             yaml_file = 'camera_parameters/sm2_matlab.yaml'
-            extrinsic = ExtrinsicCalib(yaml_file, markers_size=95)
+            extrinsic = ExtrinsicCalib(yaml_file, markers_size=95, aruco_d=cv2.aruco.DICT_5X5_100)
             extrinsic.read_yaml_file(yaml_file)
+            T_SM2 = np.zeros((4, 4))
+            T_SM2[:3,:3] = extrinsic.camera_params['stereo']['R']
+            T_SM2[:3,3] = extrinsic.camera_params['stereo']['T']
 
         left_images_names = sorted(os.listdir(os.path.join(path, 'left')))
         right_images_names = sorted(os.listdir(os.path.join(path, 'right')))
@@ -113,6 +119,9 @@ def multi_aruco_markers():
             corners_l, ids_l = extrinsic.detect_aruco_markers(left)
             corners_r, ids_r = extrinsic.detect_aruco_markers(right)
 
+            if ids_l is None or ids_r is None:
+                print('No markers detected in image {}.'.format(i))
+                continue
             # print("Detected marker id {} img L {}:".format(ids_l.flatten(), i))
             # print("Detected marker id {} img R {}:".format(ids_r.flatten(), i))
 
@@ -120,33 +129,37 @@ def multi_aruco_markers():
             # extrinsic.show_detected_markers(right_images[0], corners_r, ids_r)
 
             # Estimar a pose para os marcadores detectados
-            extrinsic.pose_estimation(ids_l.flatten(), corners_l, camera='left', image=left, show=True)
-            extrinsic.pose_estimation(ids_r.flatten(), corners_r, camera='right', image=right, show=True)
+            extrinsic.pose_estimation(ids_l.flatten(), corners_l, camera='left', image=left, show=False)
+            extrinsic.pose_estimation(ids_r.flatten(), corners_r, camera='right', image=right, show=False)
 
 
         # Acessar os dados armazenados
         data = extrinsic.data
 
-        T_relative_list = []
+        T_relative_list_01 = []
+        T_relative_list_10 = []
 
         valid_markers = extrinsic.get_valid_markers()
         # Calcular a pose relativa entre as câmeras usando o primeiro marcador detectado
         for marker_id in valid_markers:
-            print(f"Marker ID: {marker_id}")
+            print(f"--- Marker ID: {marker_id}")
 
             T_l_m = extrinsic.transform_precision(data['left'][marker_id]['translation_matrix'])
             T_r_m = extrinsic.transform_precision(data['right'][marker_id]['translation_matrix'])
 
             # Calcular a pose relativa entre as câmeras para o marcador atual
             if T_l_m is not None and T_r_m is not None:
-                R_relative, t_relative, T_relative = extrinsic.calculate_relative_pose(T_l_m, T_r_m)
-                if abs(t_relative[2]) > 55 and abs(t_relative[1]) > 55:
-                    print('Invalid translation for marker {}: {}'.format(marker_id, t_relative))
-                    continue
-                T_relative_list.append(T_relative)
+                R_relative_01, t_relative_01, T_relative_01 = extrinsic.calculate_relative_pose_0to1(T_l_m, T_r_m)
+                R_relative_10, t_relative_10, T_relative_10 = extrinsic.calculate_relative_pose_1to0(T_l_m, T_r_m)
+                # if abs(t_relative[2]) > 55 and abs(t_relative[1]) > 55:
+                #     print('Invalid translation for marker {}: {}'.format(marker_id, t_relative))
+                #     continue
+                T_relative_list_01.append(T_relative_01)
+                T_relative_list_10.append(T_relative_10)
  
                 # Visualizar a pose relativa para o marcador atual
-                extrinsic.visualize_relative_pose(R_relative, t_relative, title="Marker ID: {} path: {}".format(marker_id, path.split('/')[-1]))
+                # extrinsic.visualize_relative_pose(R_relative_01, t_relative_01, title="T01 Marker ID: {} path: {}".format(marker_id, path.split('/')[-1]))
+                # extrinsic.visualize_relative_pose(R_relative_10, t_relative_10, title="T10 Marker ID: {} path: {}".format(marker_id, path.split('/')[-1]))
 
             # print('precision relative transform:')
             # extrinsic.transform_precision(T_relative_list)
@@ -164,5 +177,5 @@ def multi_aruco_markers():
 
 if __name__ == '__main__':
     # charuco_calibration()
-    aruco_markers()
-    # multi_aruco_markers()
+    # aruco_markers()
+    multi_aruco_markers()
