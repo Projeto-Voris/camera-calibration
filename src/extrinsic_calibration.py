@@ -61,3 +61,24 @@ class ExtrinsicCalib:
 
     def calculate_relative_pose(self, T_0_2, T_1_2):
         return T_0_2 @ np.linalg.inv(T_1_2)
+    
+    def filter_images_by_precision(self, transformations, threshold=1.0):
+        """
+        Filtra imagens com base na precisão das transformações relativas.
+        
+        :param transformations: Lista de transformações relativas (Nx3 array).
+        :param threshold: Limite máximo de amplitude permitido para cada eixo.
+        :return: Índices das imagens que atendem ao critério de precisão.
+        """
+        transformations = np.array(transformations)
+        peak_to_peak = np.ptp(transformations, axis=0)  # Calcula a amplitude para cada eixo (x, y, z)
+        
+        if np.all(peak_to_peak <= threshold):
+            return list(range(len(transformations)))  # Todas as imagens atendem ao critério
+        else:
+            # Filtrar imagens com base na variação em cada eixo
+            valid_indices = [
+                i for i, t in enumerate(transformations)
+                if np.all(np.abs(t - np.mean(transformations, axis=0)) <= threshold)
+            ]
+            return valid_indices
