@@ -73,17 +73,23 @@ def process_camera_pair(cam1, cam2, extrinsic, threshold=1):
             if T1 is not None and T2 is not None:
                 T_relative = extrinsic.calculate_relative_pose(T1, T2)
                 transformations.append(T_relative[:3, 3])  # Armazena apenas a translação
-                # print(f"Imagem {k}: {T_relative[:3, 3]}")
             else:
                 print(f"Imagem {k}: Transformação não disponível.")
         else:
             print(f"Imagem {k}: Marcadores não detectados.")
 
-    # Filtrar imagens com base na precisão
+    # Calcular estatísticas
     median_transformation = np.median(transformations, axis=0)
+    mean_transformation = np.mean(transformations, axis=0)
+    std_deviation = np.std(transformations, axis=0)
     print(f"Mediana das transformações: {median_transformation}")
+    print(f"Média das transformações: {mean_transformation}")
+    print(f"Desvio padrão das transformações: {std_deviation}")
+
+    # Filtrar imagens com base na precisão
     valid_indices = extrinsic.filter_images_by_precision(transformations, threshold=threshold)
     print(f"Imagens válidas para o par ({cam1['id']}, {cam2['id']}) com base no limite de precisão ({threshold}): {valid_indices}")
+    print()
     return valid_indices
 
 def charuco_markers():
@@ -156,7 +162,7 @@ def charuco_markers():
             cam_dict[cam_key]['images'][cam_id] = images[cam_id]
 
     # Calcular as transformações relativas apenas entre 'left' e 'right' de cada câmera
-    threshold = 5
+    threshold = 1
     for cam_key, params in cam_dict.items():
         cam1 = {'id': params['ids'][0], 'images': cam_dict[cam_key]['images'][params['ids'][0]]}
         cam2 = {'id': params['ids'][1], 'images': cam_dict[cam_key]['images'][params['ids'][1]]}
