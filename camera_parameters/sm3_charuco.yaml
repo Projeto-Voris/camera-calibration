@@ -1,5 +1,5 @@
 # Left and right Charuco calibration 
- #/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/S1
+ #/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/SM3
 
 camera_matrix_left:
   - [4.3267e+03, 0.0000e+00, 1.1296e+03]

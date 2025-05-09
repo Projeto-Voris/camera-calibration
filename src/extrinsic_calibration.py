@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import cv2.aruco as aruco
 import yaml
 import matplotlib.pyplot as plt
 from collections import deque
@@ -35,16 +36,25 @@ class ExtrinsicCalib:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         corners, ids, _ = cv2.aruco.detectMarkers(image, self.aruco_dict)
+        if corners is None or len(corners) == 0 or ids is None or len(ids) == 0:
+            print("No markers detected in the image.")
+            return None, None
+
         response, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
             markerCorners=corners, markerIds=ids, image=image, board=self.charuco_board
         )
-        return charuco_corners, charuco_ids if charuco_ids is not None else (None, None)
+        return charuco_corners, charuco_ids
     
     def match_charuco_points(self, charuco_corners, charuco_ids):
         obj_points, img_points = self.charuco_board.matchImagePoints(detectedCorners=charuco_corners, detectedIds=charuco_ids)
         return obj_points, img_points
 
     def pose_estimation_charuco(self, camera, obj_points, img_points):
+
+        if len(obj_points) < 4 or len(img_points) < 4:
+            print(f"Skipping pose estimation for camera {camera} due to insufficient points.")
+            return None
+
         success, rvec, tvec = cv2.solvePnP(
             objectPoints=obj_points,
             imagePoints=img_points,

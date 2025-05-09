@@ -22,17 +22,99 @@ def charuco_calibration():
     charuco = CharucoCalibration(squares=(12, 8), marker_size=(28, 18))
     charuco.create_charucoboard(min_margin_mm=5, paper_size=(297, 420), dpi=600, save_as_pdf=False)
 
-    images_path = '/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/S1'
+    images_path = '/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/SM2'
     charuco.load_image(images_path=images_path, visualize=False)
-    charuco.detect_charuco_board(camera='left', visualize=True)
-    charuco.detect_charuco_board(camera='right', visualize=True)
+    charuco.detect_charuco_board(camera='left', visualize=False)
+    charuco.detect_charuco_board(camera='right', visualize=False)
     charuco.calibration_camera(camera='left')
     charuco.calibration_camera(camera='right')
     charuco.stereo_calibration()
-    charuco.save_camera_params(path='./camera_parameters/sm3_charuco.yaml')
-    print('debug')
+    charuco.save_camera_params(path='camera-calibration/camera_parameters/sm2_charuco.yaml')
+
     charuco.homogeneous_matrix(camera='left', visualize=False)
-    print('debugger')
+
+    return 
+
+def charuco_markers(Calibration=False):
+    """
+    Define os parâmetros das câmeras diretamente no código e calcula as transformações relativas.
+    """
+    # Inicializa o objeto ExtrinsicCalib
+    extrinsic = ExtrinsicCalib(marker_size=(28, 18))
+
+    cam_dict = { 
+        'cam1': {
+            'ids': ['SM2/left', 'SM2/right'],
+            'params': [
+                {
+                    'kk': [[4.3200e+03, 0.0000e+00, 1.0562e+03],[0.0000e+00, 4.3180e+03, 1.0937e+03],[0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kc': [-1.6623e-01, -1.6184e+00, -1.2382e-03, -1.5350e-03, 8.5337e+00]
+                },
+                {
+                    'kk': [ [4.3930e+03, 0.0000e+00, 9.7039e+02], [0.0000e+00, 4.4234e+03, 1.1391e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kc': [-2.2510e-01, -1.0044e+00, -2.3892e-03, 6.9123e-03, 5.3801e+00]
+                }
+            ]
+        },
+        'cam2': {
+            'ids': ['SM3/left', 'SM3/right'],
+            'params': [
+                {
+                    'kk': [[4.3200e+03, 0.0000e+00, 1.0562e+03],[0.0000e+00, 4.3180e+03, 1.0937e+03],[0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kc': [-1.6623e-01, -1.6184e+00, -1.2382e-03, -1.5350e-03, 8.5337e+00]
+                },
+                {
+                    'kk': [ [4.3930e+03, 0.0000e+00, 9.7039e+02], [0.0000e+00, 4.4234e+03, 1.1391e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kc': [-2.2510e-01, -1.0044e+00, -2.3892e-03, 6.9123e-03, 5.3801e+00]
+                }
+            ]
+        },
+        'cam3': {
+            'ids': ['SM4/left', 'SM4/right'],
+            'params': [
+                {
+                    'kk': [[1.3172e+03, 0.0000e+00, 7.8616e+02], [0.0000e+00, 1.3193e+03, 6.2468e+02],[0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kc': [-2.0376e-01, 1.3796e-01, 8.2274e-04, 8.9460e-04, -2.7476e-02]
+                },
+                {
+                    'kk': [[1.4093e+03, 0.0000e+00, 7.9993e+02], [0.0000e+00, 1.4089e+03, 5.9945e+02], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kc': [-3.2045e-01, 2.8344e+00, 6.7285e-03, 3.9213e-04, -1.9141e+01]
+                }
+            ]
+        }
+    }
+
+    # Configurar os parâmetros das câmeras no objeto ExtrinsicCalib
+    for cam_key, params in cam_dict.items():
+        for idx, cam_id in enumerate(params['ids']):
+            extrinsic.set_camera_params(cam_id, params['params'][idx]['kk'], params['params'][idx]['kc'])
+
+    # Lista de câmeras (baseada nos IDs do dicionário)
+    cameras = [cam_id for cam in cam_dict.values() for cam_id in cam['ids']]
+
+    # Caminho para as imagens
+    path = '/home/tiago/Downloads/20250430-20250506T115956Z-001/20250430'
+    images = load_images(path, cameras=cameras)
+
+    # Adicionar as imagens ao dicionário de câmeras
+    for cam_key, params in cam_dict.items():
+        for idx, cam_id in enumerate(params['ids']):
+            if 'images' not in cam_dict[cam_key]:
+                cam_dict[cam_key]['images'] = {}
+            cam_dict[cam_key]['images'][cam_id] = images[cam_id]
+
+    # Calcular as transformações relativas apenas entre 'left' e 'right' de cada câmera
+    threshold = 10
+    for cam_key, params in cam_dict.items():
+        cam1 = {'id': params['ids'][0], 'images': cam_dict[cam_key]['images'][params['ids'][0]]}
+        cam2 = {'id': params['ids'][1], 'images': cam_dict[cam_key]['images'][params['ids'][1]]}
+        process_camera_pair(cam1, cam2, extrinsic, threshold=threshold)
+
+    # Calcular as transformações relativas entre 'left' de cada par de câmeras
+    for cam1_key, cam2_key in combinations(cam_dict.keys(), 2):
+        cam1 = {'id': cam_dict[cam1_key]['ids'][0], 'images': cam_dict[cam1_key]['images'][cam_dict[cam1_key]['ids'][0]]}
+        cam2 = {'id': cam_dict[cam2_key]['ids'][0], 'images': cam_dict[cam2_key]['images'][cam_dict[cam2_key]['ids'][0]]}
+        process_camera_pair(cam1, cam2, extrinsic, threshold=threshold)
 
 def process_camera_pair(cam1, cam2, extrinsic, threshold=1):
     """
@@ -92,87 +174,6 @@ def process_camera_pair(cam1, cam2, extrinsic, threshold=1):
     print()
     return valid_indices
 
-def charuco_markers():
-    """
-    Define os parâmetros das câmeras diretamente no código e calcula as transformações relativas.
-    """
-    # Inicializa o objeto ExtrinsicCalib
-    extrinsic = ExtrinsicCalib(marker_size=(28, 18))
-
-    # Criar o dicionário de câmeras com os parâmetros definidos diretamente no código 
-    cam_dict = { 
-        'cam1': {
-            'ids': ['SM2/left', 'SM2/right'],
-            'params': [
-                {
-                    'kk': [[4436.4, 0.0, 1016.4], [0.0, 4434.3, 731.19], [0.0, 0.0, 1.0]],
-                    'kc': [-0.22937, -0.46029, 0.0010781, -0.00059945, 0.67818]
-                },
-                {
-                    'kk': [[ 4418.1, 0.0, 1040.4 ], [ 0.0, 4416.5, 759.65 ], [0, 0, 1]],
-                    'kc': [-0.23152, -0.40006, 0.00079416, -0.00045294, 0.15779 ]
-                }
-            ]
-        },
-        'cam2': {
-            'ids': ['SM3/left', 'SM3/right'],
-            'params': [
-                {
-                    'kk': [[4436.4, 0.0, 1016.4], [0.0, 4434.3, 731.19], [0.0, 0.0, 1.0]],
-                    'kc': [-0.22937, -0.46029, 0.0010781, -0.00059945, 0.67818]
-                },
-                {
-                    'kk': [[ 4418.1, 0.0, 1040.4 ], [ 0.0, 4416.5, 759.65 ], [0, 0, 1]],
-                    'kc': [-0.23152, -0.40006, 0.00079416, -0.00045294, 0.15779 ]
-                }
-            ]
-        },
-        'cam3': {
-            'ids': ['SM4/left', 'SM4/right'],
-            'params': [
-                {
-                    'kk': [[4436.4, 0.0, 1016.4], [0.0, 4434.3, 731.19], [0.0, 0.0, 1.0]],
-                    'kc': [-0.22937, -0.46029, 0.0010781, -0.00059945, 0.67818]
-                },
-                {
-                    'kk': [[ 4418.1, 0.0, 1040.4 ], [ 0.0, 4416.5, 759.65 ], [0, 0, 1]],
-                    'kc': [-0.23152, -0.40006, 0.00079416, -0.00045294, 0.15779 ]
-                }
-            ]
-        }
-    }
-
-    # Configurar os parâmetros das câmeras no objeto ExtrinsicCalib
-    for cam_key, params in cam_dict.items():
-        for idx, cam_id in enumerate(params['ids']):
-            extrinsic.set_camera_params(cam_id, params['params'][idx]['kk'], params['params'][idx]['kc'])
-
-    # Lista de câmeras (baseada nos IDs do dicionário)
-    cameras = [cam_id for cam in cam_dict.values() for cam_id in cam['ids']]
-
-    # Caminho para as imagens
-    path = '/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311'
-    images = load_images(path, cameras=cameras)
-
-    # Adicionar as imagens ao dicionário de câmeras
-    for cam_key, params in cam_dict.items():
-        for idx, cam_id in enumerate(params['ids']):
-            if 'images' not in cam_dict[cam_key]:
-                cam_dict[cam_key]['images'] = {}
-            cam_dict[cam_key]['images'][cam_id] = images[cam_id]
-
-    # Calcular as transformações relativas apenas entre 'left' e 'right' de cada câmera
-    threshold = 1
-    for cam_key, params in cam_dict.items():
-        cam1 = {'id': params['ids'][0], 'images': cam_dict[cam_key]['images'][params['ids'][0]]}
-        cam2 = {'id': params['ids'][1], 'images': cam_dict[cam_key]['images'][params['ids'][1]]}
-        process_camera_pair(cam1, cam2, extrinsic, threshold=threshold)
-
-    # Calcular as transformações relativas entre 'left' de cada par de câmeras
-    for cam1_key, cam2_key in combinations(cam_dict.keys(), 2):
-        cam1 = {'id': cam_dict[cam1_key]['ids'][0], 'images': cam_dict[cam1_key]['images'][cam_dict[cam1_key]['ids'][0]]}
-        cam2 = {'id': cam_dict[cam2_key]['ids'][0], 'images': cam_dict[cam2_key]['images'][cam_dict[cam2_key]['ids'][0]]}
-        process_camera_pair(cam1, cam2, extrinsic, threshold=threshold)
-
 if __name__ == '__main__':
     charuco_markers()
+    # charuco_calibration()
