@@ -259,6 +259,9 @@ class CharucoCalibration:
                 cameraMatrix=kk,
                 distCoeffs=kc,
                 imageSize=(self.images_left.shape[1], self.images_left.shape[0]))
+            
+            if camera not in self.camera_params:
+                self.camera_params[camera] = {}
 
             self.camera_params[camera]['kk'] = kk
             self.camera_params[camera]['kc'] = kc
@@ -384,7 +387,6 @@ class CharucoCalibration:
                 cv2.imshow('Warped Image with Grid {} - {}'.format(k, camera), concat)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
-
 
     def save_camera_params(self, path: str) -> None:
         """

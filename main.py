@@ -1,4 +1,6 @@
+import os
 import os.path
+import yaml
 import numpy as np
 import cv2
 from itertools import combinations
@@ -15,86 +17,138 @@ def load_images(path, cameras=('left', 'right')):
         images[camera] = [cv2.imread(os.path.join(camera_path, img)) for img in sorted(os.listdir(camera_path))]
     return images
 
-def charuco_calibration():
+def charuco_calibration(base_path: str, save_path: str = 'camera-calibration/camera_parameters') -> None:
     """
-    Realiza a calibração das câmeras usando um tabuleiro Charuco.
+    Realiza a calibração de múltiplos sistemas e câmeras usando um tabuleiro Charuco.
+    Inclui calibração intrínseca e estéreo.
+    
+    :param base_path: Caminho principal onde estão as pastas dos sistemas (ex.: SM2, SM3, SM4).
+    :param save_path: Caminho para salvar os parâmetros de calibração estéreo.
     """
+    # Instanciar a classe CharucoCalibration
     charuco = CharucoCalibration(squares=(12, 8), marker_size=(28, 18))
-    charuco.create_charucoboard(min_margin_mm=5, paper_size=(297, 420), dpi=600, save_as_pdf=False)
 
-    images_path = '/home/tiago/Downloads/Calib Extrinseca-20250312T134809Z-001/Calib Extrinseca/20250311/SM2'
-    charuco.load_image(images_path=images_path, visualize=False)
-    charuco.detect_charuco_board(camera='left', visualize=False)
-    charuco.detect_charuco_board(camera='right', visualize=False)
-    charuco.calibration_camera(camera='left')
-    charuco.calibration_camera(camera='right')
-    charuco.stereo_calibration()
-    charuco.save_camera_params(path='camera-calibration/camera_parameters/sm2_charuco.yaml')
+    # Iterar sobre os sistemas (SM2, SM3, SM4)
+    for system in ['SM2', 'SM3', 'SM4']:
+        system_path = os.path.join(base_path, system)
+        if not os.path.exists(system_path):
+            print(f"Diretório do sistema {system} não encontrado em {base_path}. Pulando...")
+            continue
 
-    charuco.homogeneous_matrix(camera='left', visualize=False)
+        print(f"Processando sistema {system}...")
 
-    return 
+        # Carregar imagens de ambas as câmeras (left e right)
+        charuco.load_image(images_path=system_path, visualize=False)
 
-def charuco_markers(Calibration=False):
+        # Detectar o tabuleiro ChArUco para ambas as câmeras
+        charuco.detect_charuco_board(camera='left', visualize=False)
+        charuco.detect_charuco_board(camera='right', visualize=False)
+
+        # Calibrar ambas as câmeras
+        charuco.calibration_camera(camera='left')
+        charuco.calibration_camera(camera='right')
+
+        # Realizar calibração estéreo
+        print(f"Realizando calibração estéreo para o sistema {system}...")
+        charuco.stereo_calibration()
+
+        # Salvar os parâmetros estéreo no formato YAML
+        save_file = os.path.join(save_path, f"{system}_stereo_charuco.yaml")
+        os.makedirs(os.path.dirname(save_file), exist_ok=True)
+        charuco.save_camera_params(save_file)
+        print(f"Parâmetros estéreo do sistema {system} salvos em {save_file}")
+
+    print("Calibração concluída para todos os sistemas.")
+
+# Configurar os parâmetros das câmeras no objeto ExtrinsicCalib
+def charuco_markers(base_path: str, Calibration=False):
     """
     Define os parâmetros das câmeras diretamente no código e calcula as transformações relativas.
+    Automatiza a calibração intrínseca se necessário.
+    
+    :param base_path: Caminho principal onde estão as pastas dos sistemas (ex.: SM2, SM3, SM4).
+    :param Calibration: Se True, realiza a calibração intrínseca automaticamente.
     """
     # Inicializa o objeto ExtrinsicCalib
     extrinsic = ExtrinsicCalib(marker_size=(28, 18))
+    
 
-    cam_dict = { 
-        'cam1': {
+    # Dicionário de câmeras e parâmetros
+    cam_dict = {
+        'SM2': {
             'ids': ['SM2/left', 'SM2/right'],
             'params': [
                 {
-                    'kk': [[4.3200e+03, 0.0000e+00, 1.0562e+03],[0.0000e+00, 4.3180e+03, 1.0937e+03],[0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kk': [[4.3200e+03, 0.0000e+00, 1.0562e+03], [0.0000e+00, 4.3180e+03, 1.0937e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
                     'kc': [-1.6623e-01, -1.6184e+00, -1.2382e-03, -1.5350e-03, 8.5337e+00]
                 },
                 {
-                    'kk': [ [4.3930e+03, 0.0000e+00, 9.7039e+02], [0.0000e+00, 4.4234e+03, 1.1391e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kk': [[4.3930e+03, 0.0000e+00, 9.7039e+02], [0.0000e+00, 4.4234e+03, 1.1391e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
                     'kc': [-2.2510e-01, -1.0044e+00, -2.3892e-03, 6.9123e-03, 5.3801e+00]
                 }
             ]
         },
-        'cam2': {
+        'SM3': {
             'ids': ['SM3/left', 'SM3/right'],
             'params': [
                 {
-                    'kk': [[4.3200e+03, 0.0000e+00, 1.0562e+03],[0.0000e+00, 4.3180e+03, 1.0937e+03],[0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kk': [[4.3200e+03, 0.0000e+00, 1.0562e+03], [0.0000e+00, 4.3180e+03, 1.0937e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
                     'kc': [-1.6623e-01, -1.6184e+00, -1.2382e-03, -1.5350e-03, 8.5337e+00]
                 },
                 {
-                    'kk': [ [4.3930e+03, 0.0000e+00, 9.7039e+02], [0.0000e+00, 4.4234e+03, 1.1391e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kk': [[4.3930e+03, 0.0000e+00, 9.7039e+02], [0.0000e+00, 4.4234e+03, 1.1391e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
                     'kc': [-2.2510e-01, -1.0044e+00, -2.3892e-03, 6.9123e-03, 5.3801e+00]
                 }
             ]
         },
-        'cam3': {
+        'SM4': {
             'ids': ['SM4/left', 'SM4/right'],
             'params': [
                 {
-                    'kk': [[1.3172e+03, 0.0000e+00, 7.8616e+02], [0.0000e+00, 1.3193e+03, 6.2468e+02],[0.0000e+00, 0.0000e+00, 1.0000e+00]],
-                    'kc': [-2.0376e-01, 1.3796e-01, 8.2274e-04, 8.9460e-04, -2.7476e-02]
+                    'kk': [[ 1355.0238, 0.0, 761.5210 ], [ 0.0, 1354.4458, 594.4952 ], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kc': [ -0.2140, 0.1692, 0.0001, -0.0006, 0.0 ]
                 },
                 {
-                    'kk': [[1.4093e+03, 0.0000e+00, 7.9993e+02], [0.0000e+00, 1.4089e+03, 5.9945e+02], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
-                    'kc': [-3.2045e-01, 2.8344e+00, 6.7285e-03, 3.9213e-04, -1.9141e+01]
+                    'kk': [[ 1366.5948, 0.0, 771.2434 ], [ 0.0, 1366.3036, 602.9112 ], [0.0000e+00, 0.0000e+00, 1.0000e+00]],
+                    'kc': [ -0.2127, 0.1492, -0.0011, -0.0001, 0.0 ]
                 }
             ]
         }
     }
 
-    # Configurar os parâmetros das câmeras no objeto ExtrinsicCalib
     for cam_key, params in cam_dict.items():
-        for idx, cam_id in enumerate(params['ids']):
-            extrinsic.set_camera_params(cam_id, params['params'][idx]['kk'], params['params'][idx]['kc'])
+        system = cam_key.split('/')[0]  # Obter o sistema (ex.: SM2, SM3, SM4)
+
+        if Calibration:
+            charuco = CharucoCalibration(squares=(12, 8), marker_size=(28, 18))
+
+            # Automatizar a calibração intrínseca para o sistema
+            print(f"Calibrando sistema {system}...")
+            system_path = os.path.join(base_path, system)
+            print(f"Path {system_path}")
+            charuco.load_image(images_path=system_path, visualize=False)
+
+            # Calibrar as câmeras 'left' e 'right'
+            for camera in ['left', 'right']:
+                charuco.detect_charuco_board(camera=camera, visualize=False)
+                charuco.calibration_camera(camera=camera)
+
+                # Obter os parâmetros intrínsecos calculados
+                cam_id = f"{system}/{camera}"
+                charuco.camera_params[cam_id] = charuco.camera_params.pop(camera)
+                extrinsic.set_camera_params(cam_id, 
+                                            charuco.camera_params[cam_id]['kk'], 
+                                            charuco.camera_params[cam_id]['kc'])
+        else:
+            # Usar os parâmetros fixos do dicionário
+            for idx, cam_id in enumerate(params['ids']):
+                extrinsic.set_camera_params(cam_id, params['params'][idx]['kk'], params['params'][idx]['kc'])
 
     # Lista de câmeras (baseada nos IDs do dicionário)
     cameras = [cam_id for cam in cam_dict.values() for cam_id in cam['ids']]
 
     # Caminho para as imagens
-    path = '/home/tiago/Downloads/20250430-20250506T115956Z-001/20250430'
-    images = load_images(path, cameras=cameras)
+    images = load_images(base_path, cameras=cameras)
 
     # Adicionar as imagens ao dicionário de câmeras
     for cam_key, params in cam_dict.items():
@@ -175,5 +229,6 @@ def process_camera_pair(cam1, cam2, extrinsic, threshold=1):
     return valid_indices
 
 if __name__ == '__main__':
-    charuco_markers()
-    # charuco_calibration()
+    base_path = '/home/tiago/Downloads/20250430'
+    # charuco_calibration(base_path)
+    charuco_markers(base_path, Calibration=True)
