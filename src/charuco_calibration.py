@@ -1,5 +1,6 @@
 import os
 import cv2
+import cv2.aruco as aruco
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -182,7 +183,6 @@ class CharucoCalibration:
             # Convert to numpy array
             self.images_left = np.stack(left_img, axis=-1).astype(np.uint8)  # Convert to uint8
             self.images_right = np.stack(right_img, axis=-1).astype(np.uint8)  # Convert to uint8
-            self.object_points = [self.charuco_board.getChessboardCorners()] * self.images_left.shape[2]
         if visualize:
             for k in range(self.images_left.shape[2]):
                 concat = np.concatenate((self.images_left[:, :, k], self.images_right[:, :, k]), axis=1)
@@ -204,10 +204,11 @@ class CharucoCalibration:
             images = self.images_right
         else:
             raise Exception('Camera must be either left or right')
+
         for i in range(images.shape[2]):
-            # img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             corners, ids, _ = cv2.aruco.detectMarkers(image=images[:, :, i], dictionary=self.aruco_dict)
             bgr_img = cv2.cvtColor(images[:, :, i], cv2.COLOR_GRAY2BGR)
+
             if ids is None:
                 print('Not detected markers at image {} from {} camera'.format(i, camera))
                 continue
@@ -258,6 +259,9 @@ class CharucoCalibration:
                 cameraMatrix=kk,
                 distCoeffs=kc,
                 imageSize=(self.images_left.shape[1], self.images_left.shape[0]))
+            
+            if camera not in self.camera_params:
+                self.camera_params[camera] = {}
 
             self.camera_params[camera]['kk'] = kk
             self.camera_params[camera]['kc'] = kc
@@ -270,25 +274,31 @@ class CharucoCalibration:
         """
         Stereo calibration using left and right camera
         """
-        # Ensure the number of object points matches the number of image points
-        num_object_points = len(self.object_points)
-        num_image_points_left = len(self.all_corners['left'])
-        num_image_points_right = len(self.all_corners['right'])
-    
-        if num_object_points != num_image_points_left or num_object_points != num_image_points_right:
-            raise ValueError(f"Number of object points ({num_object_points}) must be equal to the number of image points "
-                             f"({num_image_points_left} left, {num_image_points_right} right)")
-    
-        # ret, camera_matrix1, dist_coeffs1, camera_matrix2, dist_coeffs2, R, T, E, F
-        ret, _, _, _, _, R, T, E, F = cv2.stereoCalibrate(objectPoints=self.object_points,
-                                                          imagePoints1=self.all_corners['left'],
-                                                          imagePoints2=self.all_corners['right'],
-                                                          cameraMatrix1=self.camera_params['left']['kk'],
-                                                          distCoeffs1=self.camera_params['left']['kc'],
-                                                          cameraMatrix2=self.camera_params['right']['kk'],
-                                                          distCoeffs2=self.camera_params['right']['kc'],
-                                                          imageSize=self.images_left.shape[::2],
-                                                          flags=cv2.CALIB_FIX_INTRINSIC)
+        matched_object_points = []
+        matched_corners_left = []
+        matched_corners_right = []
+        for i in range(min(len(self.all_corners['left']), len(self.all_corners['right']))):
+            # Ensure matching ids in both left and right images
+            common_ids = np.intersect1d(self.all_ids['left'][i], self.all_ids['right'][i])
+            if len(common_ids) > 0:
+                indices_left = np.isin(self.all_ids['left'][i], common_ids).flatten()
+                indices_right = np.isin(self.all_ids['right'][i], common_ids).flatten()
+
+                matched_object_points.append(self.charuco_board.getChessboardCorners()[common_ids, :])
+                matched_corners_left.append(self.all_corners['left'][i][indices_left])
+                matched_corners_right.append(self.all_corners['right'][i][indices_right])
+
+        # Now use matched corners to perform stereo calibration
+        if matched_corners_left and matched_corners_right:
+            ret, _, _, _, _, R, T, E, F = cv2.stereoCalibrate(objectPoints=matched_object_points,
+                                                            imagePoints1=matched_corners_left,
+                                                            imagePoints2=matched_corners_right,
+                                                            cameraMatrix1=self.camera_params['left']['kk'],
+                                                            distCoeffs1=self.camera_params['left']['kc'],
+                                                            cameraMatrix2=self.camera_params['right']['kk'],
+                                                            distCoeffs2=self.camera_params['right']['kc'],
+                                                            imageSize=self.images_left.shape[::2],
+                                                            flags=cv2.CALIB_FIX_INTRINSIC)
     
         print('Stereo calibration done')
         print('R: {}'.format(R))
@@ -377,7 +387,6 @@ class CharucoCalibration:
                 cv2.imshow('Warped Image with Grid {} - {}'.format(k, camera), concat)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
-
 
     def save_camera_params(self, path: str) -> None:
         """
