@@ -297,7 +297,7 @@ class CharucoCalibration:
                                                             distCoeffs1=self.camera_params['left']['kc'],
                                                             cameraMatrix2=self.camera_params['right']['kk'],
                                                             distCoeffs2=self.camera_params['right']['kc'],
-                                                            imageSize=self.images_left.shape[::2],
+                                                            imageSize=(self.images_left.shape[1], self.images_left.shape[0]),
                                                             flags=cv2.CALIB_FIX_INTRINSIC)
     
         print('Stereo calibration done')
