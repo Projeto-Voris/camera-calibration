@@ -105,17 +105,15 @@ class ExtrinsicCalib:
             # print("Erro: Singularidade ao inverter matriz de transformação.")
             return None
     
-    def filter_images_by_precision(self, transformations, threshold=3.0):
+    def filter_images_by_precision(self, transformations, mad_multiplier=3.0):
         """
         Filtra imagens com base na consistência das transformações relativas (translações),
         usando o Desvio Absoluto Mediano (MAD).
-        O parâmetro 'threshold' aqui atua como 'mad_multiplier'.
 
         :param transformations: Lista ou array NumPy de translações (Nx3).
-        :param threshold: Atua como mad_multiplier. Fator multiplicativo para o MAD.
+        :param mad_multiplier: Fator multiplicativo para o MAD.
         :return: Índices das imagens que atendem ao critério de consistência.
         """
-        mad_multiplier = threshold 
 
         if not isinstance(transformations, (list, np.ndarray)) or len(transformations) == 0:
             return []
@@ -144,8 +142,8 @@ class ExtrinsicCalib:
             if mad_val < 1e-9: 
                 axis_mask_component = (abs_deviations <= 1e-9) 
             else:
-                current_threshold_value = mad_multiplier * mad_val 
-                axis_mask_component = (abs_deviations <= current_threshold_value)
+                current_mad_multiplier_value = mad_multiplier * mad_val 
+                axis_mask_component = (abs_deviations <= current_mad_multiplier_value)
             
             final_valid_mask = np.logical_and(final_valid_mask, axis_mask_component)
             

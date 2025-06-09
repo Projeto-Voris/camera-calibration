@@ -94,14 +94,14 @@ def charuco_calibration(base_path: str, save_path: str = 'camera-calibration/cam
     print("Calibração Charuco concluída para todos os sistemas configurados.")
 
 
-def charuco_markers(base_path: str, Calibration=False, threshold=3):
+def charuco_markers(base_path: str, Calibration=False, mad_multiplier=3):
     """
     Define os parâmetros das câmeras e calcula as transformações relativas.
     Automatiza a calibração intrínseca se necessário.
     
     :param base_path: Caminho principal onde estão as pastas dos sistemas (ex.: Passive, Active).
     :param Calibration: Se True, realiza a calibração intrínseca automaticamente.
-    :param threshold: Limite de precisão para filtrar imagens em process_camera_pair.
+    :param mad_multiplier: Fator multiplicativo para o Desvio Absoluto Mediano (MAD).
     """
     extrinsic = ExtrinsicCalib(marker_size=(28, 18))
     
@@ -217,7 +217,7 @@ def charuco_markers(base_path: str, Calibration=False, threshold=3):
         
         cam1_data = {'id': cam1_logical_id, 'images': cam1_images}
         cam2_data = {'id': cam2_logical_id, 'images': cam2_images}
-        process_camera_pair(cam1_data, cam2_data, extrinsic, threshold=threshold)
+        process_camera_pair(cam1_data, cam2_data, extrinsic, mad_multiplier=mad_multiplier)
 
     # Calcular transformações relativas inter-sistemas (left de sistema A vs left de sistema B)
     print("\nCalculando transformações relativas inter-sistemas (entre câmeras 'left'):")
@@ -235,16 +235,16 @@ def charuco_markers(base_path: str, Calibration=False, threshold=3):
             
         cam1_data = {'id': cam1_logical_id, 'images': cam1_images}
         cam2_data = {'id': cam2_logical_id, 'images': cam2_images}
-        process_camera_pair(cam1_data, cam2_data, extrinsic, threshold=threshold)
+        process_camera_pair(cam1_data, cam2_data, extrinsic, mad_multiplier=mad_multiplier)
 
-def process_camera_pair(cam1, cam2, extrinsic, threshold=1):
+def process_camera_pair(cam1, cam2, extrinsic, mad_multiplier=1):
     """
     Processa um par de câmeras, calcula as transformações relativas e filtra imagens válidas.
     
     :param cam1: Dicionário com informações da primeira câmera ('id', 'images').
     :param cam2: Dicionário com informações da segunda câmera ('id', 'images').
     :param extrinsic: Objeto ExtrinsicCalib para realizar os cálculos.
-    :param threshold: Limite de precisão para filtrar imagens.
+    :param mad_multiplier: Fator multiplicativo para o Desvio Absoluto Mediano (MAD).
     :return: Lista de índices das imagens válidas.
     """
     transformations = []
@@ -320,28 +320,28 @@ def process_camera_pair(cam1, cam2, extrinsic, threshold=1):
     print(f"  Média das translações (mm): {mean_transformation}")
     print(f"  Desvio padrão das translações (mm): {std_deviation}")
 
-    # Plotar a transformação mediana
-    x, y, z = median_transformation
-    fig = plt.figure(figsize=(8,6)) # Ajuste o tamanho da figura se necessário
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(x, y, z, color='r', s=100, label=f'Mediana T: ({x:.2f}, {y:.2f}, {z:.2f}) mm')
+    # # Plotar a transformação mediana
+    # x, y, z = median_transformation
+    # fig = plt.figure(figsize=(8,6)) # Ajuste o tamanho da figura se necessário
+    # ax = fig.add_subplot(111, projection='3d')
+    # ax.scatter(x, y, z, color='r', s=100, label=f'Mediana T: ({x:.2f}, {y:.2f}, {z:.2f}) mm')
     
-    trans_array = np.array(transformations)
-    ax.scatter(trans_array[:,0], trans_array[:,1], trans_array[:,2], color='b', alpha=0.3, label=f'Todas as Translações ({valid_image_pairs_count})')
+    # trans_array = np.array(transformations)
+    # ax.scatter(trans_array[:,0], trans_array[:,1], trans_array[:,2], color='b', alpha=0.3, label=f'Todas as Translações ({valid_image_pairs_count})')
 
-    ax.set_xlabel('X (mm)')
-    ax.set_ylabel('Y (mm)')
-    ax.set_zlabel('Z (mm)')
-    ax.legend()
-    ax.set_title(f"Transformações Relativas: '{cam1['id']}' para '{cam2['id']}'", fontsize=10)
-    ax.plot([0],[0],[0], 'ko', markersize=5, label="Origem (Câm1 Ref.)") 
-    ax.quiver(0, 0, 0, x, y, z, length=np.linalg.norm([x,y,z]), normalize=True, color='r', arrow_length_ratio=0.1, label="Vetor Mediana")
-    ax.legend() # Chamar legend novamente para incluir o quiver
-    plt.tight_layout() # Ajusta o padding para evitar sobreposição de legendas/títulos
-    plt.show()
+    # ax.set_xlabel('X (mm)')
+    # ax.set_ylabel('Y (mm)')
+    # ax.set_zlabel('Z (mm)')
+    # ax.legend()
+    # ax.set_title(f"Transformações Relativas: '{cam1['id']}' para '{cam2['id']}'", fontsize=10)
+    # ax.plot([0],[0],[0], 'ko', markersize=5, label="Origem (Câm1 Ref.)") 
+    # ax.quiver(0, 0, 0, x, y, z, length=np.linalg.norm([x,y,z]), normalize=True, color='r', arrow_length_ratio=0.1, label="Vetor Mediana")
+    # ax.legend() # Chamar legend novamente para incluir o quiver
+    # plt.tight_layout() # Ajusta o padding para evitar sobreposição de legendas/títulos
+    # plt.show()
 
-    valid_indices = extrinsic.filter_images_by_precision(transformations, threshold=threshold)
-    print(f"  Índices de imagens filtradas (precisão < {threshold}): {valid_indices}")
+    valid_indices = extrinsic.filter_images_by_precision(transformations, mad_multiplier=mad_multiplier)
+    print(f"  Índices de imagens filtradas (precisão < {mad_multiplier}): {valid_indices}")
     print()
     return valid_indices
 
@@ -355,4 +355,4 @@ if __name__ == '__main__':
 
     # Para usar os parâmetros (hardcoded ou calibrados na hora) e calcular transformações extrínsecas:
     print("\nIniciando cálculo de marcadores Charuco e transformações extrínsecas...")
-    charuco_markers(base_path, Calibration=True, threshold=1.5) 
+    charuco_markers(base_path, Calibration=True, mad_multiplier=1.5) 
