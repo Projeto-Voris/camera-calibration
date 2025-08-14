@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 class CharucoCalibration:
     def __init__(self, squares: tuple[int, int] = (8, 6), marker_size: tuple[int, int] = (60, 40),
-                 aruco_d: int = cv2.aruco.DICT_5X5_100):
+                 aruco_d: int = cv2.aruco.DICT_4X4_100) -> None:
         """
         Class to calibrate stereo cameras using ChArUco calibration board
             :param squares: Number of squares in board (row, col)
@@ -172,7 +172,7 @@ class CharucoCalibration:
             if len(images_left) != len(images_right):
                 raise Exception('Number of images do not match')
 
-            print('Found {} images on provided path'.format(len(images_left) + len(images_right)))
+            print('Found {} pair of images on provided path'.format(len(images_left)))
 
             # Read images and create a list of it.
             left_img = [cv2.imread(os.path.join(images_path, 'left', str(img_name)), cv2.IMREAD_GRAYSCALE)
@@ -218,8 +218,8 @@ class CharucoCalibration:
                                                                                              image=images[:, :, i],
                                                                                              board=self.charuco_board)
                 # If true will show detected markers and corners images
-
-                if visualize:
+        
+                if visualize and charuco_corners is not None:
                     img_marker = cv2.aruco.drawDetectedMarkers(image=bgr_img.copy(), corners=corners, ids=ids)
                     img_corners = cv2.aruco.drawDetectedCornersCharuco(image=bgr_img.copy(),
                                                                        charucoCorners=charuco_corners,
@@ -297,7 +297,7 @@ class CharucoCalibration:
                                                             distCoeffs1=self.camera_params['left']['kc'],
                                                             cameraMatrix2=self.camera_params['right']['kk'],
                                                             distCoeffs2=self.camera_params['right']['kc'],
-                                                            imageSize=self.images_left.shape[::2],
+                                                            imageSize=(self.images_left.shape[1], self.images_left.shape[0]),
                                                             flags=cv2.CALIB_FIX_INTRINSIC)
     
         print('Stereo calibration done')
