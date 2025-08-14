@@ -53,11 +53,11 @@ def charuco_calibration(base_path: str, save_path: str = 'camera-calibration/cam
     :param base_path: Caminho principal onde estão as pastas dos sistemas (ex.: Passive, Active).
     :param save_path: Caminho para salvar os parâmetros de calibração estéreo.
     """
-    charuco = CharucoCalibration(squares=(12, 8), marker_size=(28, 18))
+    charuco = CharucoCalibration(squares=(12, 9), marker_size=(30, 22))
 
     systems_config = [
-        {'logical_name': 'SM2 Passivo', 'disk_folder': 'Passive'}, # Mapeia para a pasta 'Passive' no disco
-        {'logical_name': 'SM3 e SM4 Ativo', 'disk_folder': 'Active'}  # Mapeia para a pasta 'Active' no disco
+        {'logical_name': 'Passive', 'disk_folder': 'Passive'}, # Mapeia para a pasta 'Passive' no disco
+        {'logical_name': 'Active', 'disk_folder': 'Active'}  # Mapeia para a pasta 'Active' no disco
     ]
 
     for config in systems_config:
@@ -77,7 +77,7 @@ def charuco_calibration(base_path: str, save_path: str = 'camera-calibration/cam
         # e internamente procura por 'Passive/left' e 'Passive/right'.
         charuco.load_image(images_path=system_data_path, visualize=False)
 
-        charuco.detect_charuco_board(camera='left', visualize=False)
+        charuco.detect_charuco_board(camera='left', visualize=True)
         charuco.detect_charuco_board(camera='right', visualize=False)
 
         charuco.calibration_camera(camera='left')
@@ -93,7 +93,6 @@ def charuco_calibration(base_path: str, save_path: str = 'camera-calibration/cam
 
     print("Calibração Charuco concluída para todos os sistemas configurados.")
 
-
 def charuco_markers(base_path: str, Calibration=False, mad_multiplier=3):
     """
     Define os parâmetros das câmeras e calcula as transformações relativas.
@@ -103,23 +102,23 @@ def charuco_markers(base_path: str, Calibration=False, mad_multiplier=3):
     :param Calibration: Se True, realiza a calibração intrínseca automaticamente.
     :param mad_multiplier: Fator multiplicativo para o Desvio Absoluto Mediano (MAD).
     """
-    extrinsic = ExtrinsicCalib(marker_size=(28, 18))
+    extrinsic = ExtrinsicCalib(marker_size=(30, 22), aruco_dict= cv2.aruco.DICT_4X4_100)
     
     cam_dict = {
         'SM2 Passivo': {
             'disk_folder': 'Passive', # Pasta no disco para dados do SM2 Passivo
             'ids': ['SM2 Passivo/left', 'SM2 Passivo/right'], # IDs lógicos
             'params': [ 
-                {'kk': [[4.3200e+03, 0.0000e+00, 1.0562e+03], [0.0000e+00, 4.3180e+03, 1.0937e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]], 'kc': [-1.6623e-01, -1.6184e+00, -1.2382e-03, -1.5350e-03, 8.5337e+00]},
-                {'kk': [[4.3930e+03, 0.0000e+00, 9.7039e+02], [0.0000e+00, 4.4234e+03, 1.1391e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]], 'kc': [-2.2510e-01, -1.0044e+00, -2.3892e-03, 6.9123e-03, 5.3801e+00]}
+                {'kk': [[1.2184e+03, 0.0000e+00, 1.2629e+03], [0.0000e+00, 1.2236e+03, 1.0330e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]], 'kc': [-2.2489e-01, 1.0459e-01, -1.0402e-03, -1.0894e-04, -2.7209e-02]},
+                {'kk': [[1.2346e+03, 0.0000e+00, 1.2291e+03], [0.0000e+00, 1.2397e+03, 1.0247e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]], 'kc': [-2.2521e-01, 1.0106e-01, -2.0296e-03, -9.4201e-04, -2.4058e-02]}
             ]
         },
         'SM3 e SM4 Ativo': {
             'disk_folder': 'Active', # Pasta no disco para dados do SM3 e SM4 Ativo
             'ids': ['SM3 e SM4 Ativo/left', 'SM3 e SM4 Ativo/right'], # IDs lógicos
             'params': [ 
-                {'kk': [[4.3200e+03, 0.0000e+00, 1.0562e+03], [0.0000e+00, 4.3180e+03, 1.0937e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]], 'kc': [-1.6623e-01, -1.6184e+00, -1.2382e-03, -1.5350e-03, 8.5337e+00]},
-                {'kk': [[4.3930e+03, 0.0000e+00, 9.7039e+02], [0.0000e+00, 4.4234e+03, 1.1391e+03], [0.0000e+00, 0.0000e+00, 1.0000e+00]], 'kc': [-2.2510e-01, -1.0044e+00, -2.3892e-03, 6.9123e-03, 5.3801e+00]}
+                {'kk': [[2.4831e+03, 0.0000e+00, 7.6656e+02], [0.0000e+00, 2.4953e+03, 7.8680e+02], [0.0000e+00, 0.0000e+00, 1.0000e+00]], 'kc': [-2.0990e-01, -2.7023e-01, 3.8084e-03, 2.9572e-03, 2.3722e-01]},
+                {'kk': [[2.3291e+03, 0.0000e+00, 1.0493e+03], [0.0000e+00, 2.3352e+03, 7.9478e+02], [0.0000e+00, 0.0000e+00, 1.0000e+00]], 'kc': [-4.4301e-01, 7.2191e-01, -1.1586e-02, -1.0612e-02, -1.2470e+00]}
             ]
         }
     }
@@ -128,7 +127,7 @@ def charuco_markers(base_path: str, Calibration=False, mad_multiplier=3):
         disk_folder_for_data = system_config['disk_folder'] # ex: 'Passive' ou 'Active'
         
         if Calibration:
-            charuco_calib_obj = CharucoCalibration(squares=(12, 8), marker_size=(28, 18))
+            charuco_calib_obj = CharucoCalibration(squares=(12, 9), marker_size=(30, 22), aruco_d=cv2.aruco.DICT_4X4_100)
             print(f"Calibrando sistema '{system_logical_name}' (usando dados da pasta: '{disk_folder_for_data}')...")
             # system_actual_data_path é o caminho para a pasta do sistema (ex: base_path/Passive)
             system_actual_data_path = os.path.join(base_path, disk_folder_for_data)
@@ -248,6 +247,7 @@ def process_camera_pair(cam1, cam2, extrinsic, mad_multiplier=1):
     :return: Lista de índices das imagens válidas.
     """
     transformations = []
+    T_homogeneous = []
     print(f"Transformação relativa entre '{cam1['id']}' e '{cam2['id']}':")
     
     num_images_cam1 = len(cam1['images'])
@@ -294,6 +294,7 @@ def process_camera_pair(cam1, cam2, extrinsic, mad_multiplier=1):
                 T_relative = extrinsic.calculate_relative_pose(T1, T2)
                 if T_relative is not None:
                     transformations.append(T_relative[:3, 3]) 
+                    T_homogeneous.append(T_relative) # Armazena a matriz completa
                     valid_image_pairs_count +=1
                 else:
                     print(f"  Imagem {k}: Transformação relativa não pôde ser calculada.")
@@ -315,30 +316,35 @@ def process_camera_pair(cam1, cam2, extrinsic, mad_multiplier=1):
     median_transformation = np.median(transformations, axis=0)
     mean_transformation = np.mean(transformations, axis=0)
     std_deviation = np.std(transformations, axis=0)
+    T_svd = extrinsic.average_transform_svd(T_homogeneous)
+    T_quaternion = extrinsic.average_transform_quaternion(T_homogeneous)
+    np.set_printoptions(precision=4, suppress=True)  
+
     print(f"  Estatísticas baseadas em {valid_image_pairs_count} pares de imagens válidas:")
     print(f"  Mediana das translações (mm): {median_transformation}")
     print(f"  Média das translações (mm): {mean_transformation}")
     print(f"  Desvio padrão das translações (mm): {std_deviation}")
-
-    # # Plotar a transformação mediana
-    # x, y, z = median_transformation
-    # fig = plt.figure(figsize=(8,6)) # Ajuste o tamanho da figura se necessário
-    # ax = fig.add_subplot(111, projection='3d')
-    # ax.scatter(x, y, z, color='r', s=100, label=f'Mediana T: ({x:.2f}, {y:.2f}, {z:.2f}) mm')
+    print(f" SVD T '{cam1['id']}' e '{cam2['id']}':\n {T_svd}")
+    print(f" Quat T '{cam1['id']}' e '{cam2['id']}':\n {T_quaternion}")
+    # Plotar a transformação mediana
+    x, y, z = T_svd[:3, 3]  # Extrai a translação da matriz SVD
+    fig = plt.figure(figsize=(8,6)) # Ajuste o tamanho da figura se necessário
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(x, y, z, color='r', s=100, label=f'Mediana T: ({x:.2f}, {y:.2f}, {z:.2f}) mm')
     
-    # trans_array = np.array(transformations)
-    # ax.scatter(trans_array[:,0], trans_array[:,1], trans_array[:,2], color='b', alpha=0.3, label=f'Todas as Translações ({valid_image_pairs_count})')
+    trans_array = np.array(transformations)
+    ax.scatter(trans_array[:,0], trans_array[:,1], trans_array[:,2], color='b', alpha=0.3, label=f'Todas as Translações ({valid_image_pairs_count})')
 
-    # ax.set_xlabel('X (mm)')
-    # ax.set_ylabel('Y (mm)')
-    # ax.set_zlabel('Z (mm)')
-    # ax.legend()
-    # ax.set_title(f"Transformações Relativas: '{cam1['id']}' para '{cam2['id']}'", fontsize=10)
-    # ax.plot([0],[0],[0], 'ko', markersize=5, label="Origem (Câm1 Ref.)") 
-    # ax.quiver(0, 0, 0, x, y, z, length=np.linalg.norm([x,y,z]), normalize=True, color='r', arrow_length_ratio=0.1, label="Vetor Mediana")
-    # ax.legend() # Chamar legend novamente para incluir o quiver
-    # plt.tight_layout() # Ajusta o padding para evitar sobreposição de legendas/títulos
-    # plt.show()
+    ax.set_xlabel('X (mm)')
+    ax.set_ylabel('Y (mm)')
+    ax.set_zlabel('Z (mm)')
+    ax.legend()
+    ax.set_title(f"Transformações Relativas: '{cam1['id']}' para '{cam2['id']}'", fontsize=10)
+    ax.plot([0],[0],[0], 'ko', markersize=5, label="Origem (Câm1 Ref.)") 
+    ax.quiver(0, 0, 0, x, y, z, length=np.linalg.norm([x,y,z]), normalize=True, color='r', arrow_length_ratio=0.1, label="Vetor Mediana")
+    ax.legend() # Chamar legend novamente para incluir o quiver
+    plt.tight_layout() # Ajusta o padding para evitar sobreposição de legendas/títulos
+    plt.show()
 
     valid_indices = extrinsic.filter_images_by_precision(transformations, mad_multiplier=mad_multiplier)
     print(f"  Índices de imagens filtradas (precisão < {mad_multiplier}): {valid_indices}")
@@ -347,7 +353,7 @@ def process_camera_pair(cam1, cam2, extrinsic, mad_multiplier=1):
 
 if __name__ == '__main__':
     # ATUALIZE ESTE CAMINHO para o diretório que contém as pastas 'Passive' e 'Active'
-    base_path = '/home/tiago/Downloads/20250430' 
+    base_path = '/home/daniel/Pictures/image_logs/MULTI/20250814' 
 
     # Para realizar a calibração intrínseca e estéreo e salvar os arquivos YAML:
     # print("Iniciando calibração Charuco (intrínseca e estéreo)...")

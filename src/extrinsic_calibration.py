@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import cv2.aruco as aruco
+from scipy.spatial.transform import Rotation as R
 
 class ExtrinsicCalib:
     def __init__(self, marker_ids=list(range(50)), marker_size=100, dpi=600, aruco_dict=cv2.aruco.DICT_5X5_100): # Revertido: aruco_dict
@@ -148,3 +149,66 @@ class ExtrinsicCalib:
             final_valid_mask = np.logical_and(final_valid_mask, axis_mask_component)
             
         return np.where(final_valid_mask)[0].tolist()
+    
+    def average_transform_svd(self, transform_list: list) -> np.ndarray:
+        """
+        Average homogeneous transforms using SVD for rotation and mean for translation.
+        transform_list: list of 4x4 transformation matrices
+        """
+        if len(transform_list) == 0:
+            raise ValueError("No transforms provided.")
+
+        # Average rotation
+        M = np.zeros((3, 3))
+        for T_i in transform_list:
+            M += T_i[:3, :3]
+        M /= len(transform_list)
+
+        U, _, Vt = np.linalg.svd(M)
+        R_avg = U @ Vt
+        if np.linalg.det(R_avg) < 0:
+            U[:, -1] *= -1
+            R_avg = U @ Vt
+
+        # Average translation
+        t_sum = np.zeros(3)
+        for T_i in transform_list:
+            t_sum += T_i[:3, 3]
+        t_avg = t_sum / len(transform_list)
+
+        # Rebuild homogeneous matrix
+        T_avg = np.eye(4)
+        T_avg[:3, :3] = R_avg
+        T_avg[:3, 3] = t_avg
+        return T_avg
+
+    def average_transform_quaternion(self, transform_list: list) -> np.ndarray:
+        """
+        Average homogeneous transforms using quaternion mean for rotation and mean for translation.
+        transform_list: list of 4x4 transformation matrices
+        """
+        if len(transform_list) == 0:
+            raise ValueError("No transforms provided.")
+
+        quats = []
+        t_sum = np.zeros(3)
+
+        for T_i in transform_list:
+            R_i = T_i[:3, :3]
+            q = R.from_matrix(R_i).as_quat()  # xyzw
+            if len(quats) > 0 and np.dot(quats[0], q) < 0:
+                q = -q
+            quats.append(q)
+            t_sum += T_i[:3, 3]
+
+        quats = np.array(quats)
+        q_mean = np.mean(quats, axis=0)
+        q_mean /= np.linalg.norm(q_mean)
+
+        R_avg = R.from_quat(q_mean).as_matrix()
+        t_avg = t_sum / len(transform_list)
+
+        T_avg = np.eye(4)
+        T_avg[:3, :3] = R_avg
+        T_avg[:3, 3] = t_avg
+        return T_avg
