@@ -152,12 +152,13 @@ def main():
     # Example usage
     active = './cfg/system2.yaml' 
     passive = './cfg/system1.yaml'
-    transform_path = './data'
+    transform_path = './data/20251211'
     transform_files = sorted(os.listdir(transform_path))
     transform = ExtrinsicTransform(active, passive)
     transform_list = {
                         'active': {'cam1': deque(), 'cam2': deque()},
                         'passive': {'cam1': deque(), 'cam2': deque()},
+                        'fpv': {'cam': deque()}
                     }
     for file in transform_files:
         if file.endswith('.txt'):
@@ -172,22 +173,34 @@ def main():
     print(f"Average Transform SVD Passive Left-Right:\n{T_avg_svd}")
     print(f"Average translate vector SVD Passive Left-Right:\n{T_avg_svd[:3, 3]}")             
     print('-' * 50)
-    t_cam1_cam1 = transform.calculate_relative_pose(transform_list['active']['cam1'], transform_list['active']['cam2'])
-    T_avg_svd = transform.average_transform_svd(t_cam1_cam1)
-    print(f"Average Transform SVD Active Left-Rightt:\n{T_avg_svd}")
-    print(f"Average translate vector SVD Active Left-Right:\n{T_avg_svd[:3, 3]}")     
+    # t_cam1_cam1 = transform.calculate_relative_pose(transform_list['active']['cam1'], transform_list['active']['cam2'])
+    # T_avg_svd = transform.average_transform_svd(t_cam1_cam1)
+    # print(f"Average Transform SVD Active Left-Rightt:\n{T_avg_svd}")
+    # print(f"Average translate vector SVD Active Left-Right:\n{T_avg_svd[:3, 3]}")     
+    # print('-' * 50)
+
+    # t_cam1_cam1 = transform.calculate_relative_pose(transform_list['passive']['cam1'], transform_list['active']['cam1'])
+    # T_avg_svd = transform.average_transform_svd(t_cam1_cam1)
+    # print(f"Average Transform SVD Left-Left:\n{T_avg_svd}")
+    # print(f"Average translate vector SVD Left-Left:\n{T_avg_svd[:3, 3]}")
+    # print('-' * 50)
+        
+    # t_cam2_cam2 = transform.calculate_relative_pose(transform_list['passive']['cam2'], transform_list['active']['cam2'])
+    # T_avg_svd = transform.average_transform_svd(t_cam2_cam2)
+    # print(f"Average Transform SVD Right-Right:\n{T_avg_svd}")
+    # print(f"Average translate vector SVD Right-Right:\n{T_avg_svd[:3, 3]}")
+
+    t_fpv_cam1 = transform.calculate_relative_pose(transform_list['fpv']['cam'], transform_list['passive']['cam1'])
+    T_avg_svd = transform.average_transform_svd(t_fpv_cam1)
+    print(f"Average Transform SVD FPV-Passive Left:\n{T_avg_svd}")
+    print(f"Average translate vector SVD FPV-Passive Left:\n{T_avg_svd[:3, 3]}")     
     print('-' * 50)
 
-    t_cam1_cam1 = transform.calculate_relative_pose(transform_list['passive']['cam1'], transform_list['active']['cam1'])
-    T_avg_svd = transform.average_transform_svd(t_cam1_cam1)
-    print(f"Average Transform SVD Left-Left:\n{T_avg_svd}")
-    print(f"Average translate vector SVD Left-Left:\n{T_avg_svd[:3, 3]}")
+    t_fpv_cam2 = transform.calculate_relative_pose(transform_list['fpv']['cam'], transform_list['passive']['cam2'])
+    T_avg_svd = transform.average_transform_svd(t_fpv_cam2)
+    print(f"Average Transform SVD FPV-Passive Right:\n{T_avg_svd}")
+    print(f"Average translate vector SVD FPV-Passive Right:\n{T_avg_svd[:3, 3]}")     
     print('-' * 50)
-        
-    t_cam2_cam2 = transform.calculate_relative_pose(transform_list['passive']['cam2'], transform_list['active']['cam2'])
-    T_avg_svd = transform.average_transform_svd(t_cam2_cam2)
-    print(f"Average Transform SVD Right-Right:\n{T_avg_svd}")
-    print(f"Average translate vector SVD Right-Right:\n{T_avg_svd[:3, 3]}")
 
 if __name__ == "__main__":
     main()
