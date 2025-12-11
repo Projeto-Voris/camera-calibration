@@ -3,6 +3,7 @@ import cv2
 import cv2.aruco as aruco
 from scipy.spatial.transform import Rotation as R
 
+
 class ExtrinsicCalib:
     def __init__(self, marker_ids=list(range(50)), marker_size=100, dpi=600, aruco_dict=cv2.aruco.DICT_5X5_100): # Revertido: aruco_dict
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(aruco_dict)
