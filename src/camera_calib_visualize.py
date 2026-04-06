@@ -2,6 +2,7 @@ import cv2
 import yaml
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
 class DistortionVisualizer:
     def __init__(self, yaml_path, resolution=(1920, 1080)):
@@ -87,64 +88,174 @@ class DistortionVisualizer:
 
     def plot_distortion(self, mode='all', save_path=None):
         """
-        Plots left and right camera distortion side-by-side with stereo metadata.
+        Plots left and right camera distortion side-by-side with color-coded magnitude.
         """
-        fig, axes = plt.subplots(1, 2, figsize=(18, 8), sharey=True)
+        fig, axes = plt.subplots(1, 2, figsize=(20, 8), sharey=True)
         sides = ['left', 'right']
         
+        # Guardar o objeto quiver para criar a colorbar depois
+        last_q = None
+
         for i, side in enumerate(sides):
             u, v, u_dist, v_dist = self.compute_distortion_field(camera=side, mode=mode)
             
-            # Quiver plot for distortion vectors
-            # scale=0.1 magnifies the visual effect for better clarity in articles
-            ax = axes[i]
-            ax.quiver(u, v, u_dist - u, v_dist - v, 
-                      scale_units='xy', scale=0.1, color='teal', alpha=0.7)
+            # Calcular a magnitude do erro (em pixels)
+            du = u_dist - u
+            dv = v_dist - v
+            magnitudes = np.sqrt(du**2 + dv**2)
             
-            ax.set_title(f"{side.upper()} Camera - {mode.capitalize()} Distortion", fontsize=14)
+            ax = axes[i]
+            
+            # Quiver com escala de cor (cmap)
+            # pivot='mid' ajuda a centralizar a origem do vetor no ponto do grid
+            q = ax.quiver(u, v, du, dv, magnitudes,
+                          cmap='viridis', # 'inferno', 'magma' ou 'plasma' também são ótimos
+                          scale_units='xy', 
+                          scale=0.1, 
+                          alpha=0.9)
+            
+            ax.set_title(f"{side.upper()} Camera - {mode.capitalize()} Distortion", fontsize=15, pad=15)
             ax.invert_yaxis()
             ax.set_xlabel("Pixels (X)")
             if i == 0: ax.set_ylabel("Pixels (Y)")
-            ax.grid(True, linestyle=':', alpha=0.4)
+            ax.grid(True, linestyle=':', alpha=0.3)
+            last_q = q
 
-        # --- Calculate Stereo Metadata ---
+        # --- Adicionar Colorbar ---
+        # Criamos uma barra lateral para indicar o erro em pixels
+        cbar_ax = fig.add_axes([0.92, 0.25, 0.015, 0.5]) # [left, bottom, width, height]
+        cbar = fig.colorbar(last_q, cax=cbar_ax)
+        cbar.set_label('Distortion Magnitude (Pixels)', rotation=270, labelpad=15)
+
+        # --- Stereo Metadata ---
         T = self.camera_params['stereo']['T']
-        R = self.camera_params['stereo']['R']
-        
-        # Baseline is the Euclidean distance between camera centers
         baseline = np.linalg.norm(T)
         
-        # Convert Rotation Matrix to Euler Angles (Degrees) for readability
-        # Assuming typical OpenCV coordinate system (Z forward, X right, Y down)
-        sy = np.sqrt(R[0,0] * R[0,0] + R[1,0] * R[1,0])
-        singular = sy < 1e-6
-        if not singular:
-            x = np.arctan2(R[2,1], R[2,2])
-            y = np.arctan2(-R[2,0], sy)
-            z = np.arctan2(R[1,0], R[0,0])
-        else:
-            x = np.arctan2(-R[1,2], R[1,1])
-            y = np.arctan2(-R[2,0], sy)
-            z = 0
-        euler_deg = np.degrees([x, y, z])
+        # Rotação Simplificada (Euler)
+        R = self.camera_params['stereo']['R']
+        sy = np.sqrt(R[0,0]**2 + R[1,0]**2)
+        y_angle = np.degrees(np.arctan2(-R[2,0], sy))
 
-        # Add metadata text box
         stats_text = (
-            f"Stereo Baseline: {baseline:.4f} units\n"
-            f"Relative Rotation (XYZ Deg):\n"
-            f"[{euler_deg[0]:.2f}°, {euler_deg[1]:.2f}°, {euler_deg[2]:.2f}°]"
+            f"Stereo Baseline: {baseline:.4f}\n"
+            f"Relative Y-Rotation (Yaw): {y_angle:.3f}°"
         )
         
-        fig.text(0.5, 0.02, stats_text, ha='center', fontsize=12, 
-                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray', boxstyle='round,pad=0.5'))
+        fig.text(0.5, 0.02, stats_text, ha='center', fontsize=11, 
+                 bbox=dict(facecolor='white', alpha=0.9, edgecolor='lightgray', boxstyle='round,pad=0.6'))
 
-        plt.tight_layout(rect=[0, 0.1, 1, 0.95])
+        # Ajuste fino para não sobrepor a colorbar
+        plt.subplots_adjust(left=0.05, right=0.9, bottom=0.15, top=0.9)
         
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"Publication-ready plot saved to: {save_path}")
+            print(f"Plot salvo com escala de cor em: {save_path}")
             
         plt.show()
+
+    def compute_field(self, camera='left', mode='radial', step=40):
+        """ Gera a malha e calcula o deslocamento para o componente específico """
+        x = np.arange(0, self.width + step, step)
+        y = np.arange(0, self.height + step, step)
+        u, v = np.meshgrid(x, y)
+        
+        p = self.camera_params[camera]
+        fx, fy = p['kk'][0, 0], p['kk'][1, 1]
+        cx, cy = p['kk'][0, 2], p['kk'][1, 2]
+        d = p['kc'].flatten()
+
+        # Coordenadas normalizadas
+        xn = (u - cx) / fx
+        yn = (v - cy) / fy
+        r2 = xn**2 + yn**2
+        r4 = r2**2
+        r6 = r2**3
+        
+        # k1, k2, p1, p2, k3
+        k1, k2, p1, p2, k3 = d[0], d[1], d[2], d[3], d[4] if len(d)>4 else 0
+
+        if mode == 'radial':
+            # Apenas componente radial
+            radial_scale = (1 + k1*r2 + k2*r4 + k3*r6)
+            u_dist = fx * (xn * radial_scale) + cx
+            v_dist = fy * (yn * radial_scale) + cy
+        else:
+            # Apenas componente tangencial
+            dx_tan = 2*p1*xn*yn + p2*(r2 + 2*xn**2)
+            dy_tan = p1*(r2 + 2*yn**2) + 2*p2*xn*yn
+            u_dist = fx * (xn + dx_tan) + cx
+            v_dist = fy * (yn + dy_tan) + cy
+            
+        return u, v, u_dist, v_dist
+
+    def plot_stereo_report(self, camera_to_show='left', save_path=None):
+        """ 
+        Gera o plot comparativo entre Radial e Tangencial da mesma câmera 
+        incluindo os dados de calibração abaixo.
+        """
+        fig = plt.figure(figsize=(16, 10), facecolor='white')
+        gs = plt.GridSpec(2, 2, height_ratios=[3, 1], hspace=0.3)
+        
+        modes = ['radial', 'tangential']
+        titles = ['Radial Component of the Distortion Model', 
+                  'Tangential Component of the Distortion Model']
+        
+        axes = [fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1])]
+
+        for ax, mode, title in zip(axes, modes, titles):
+            u, v, u_d, v_d = self.compute_field(camera=camera_to_show, mode=mode)
+            du, dv = u_d - u, v_d - v
+            mags = np.sqrt(du**2 + dv**2)
+
+            # 1. Contornos preenchidos (fundo sutil)
+            ax.contourf(u, v, mags, 20, cmap='Greys', alpha=0.15)
+            
+            # 2. Linhas de contorno com rótulos (Estilo MATLAB)
+            levels = 10 if mode == 'radial' else 8
+            cs = ax.contour(u, v, mags, levels=levels, colors='black', linewidths=0.6)
+            ax.clabel(cs, inline=True, fontsize=9, fmt='%.1f')
+
+            # 3. Vetores de distorção (Quiver)
+            # Ajuste 'scale' se as setas estiverem muito grandes ou pequenas
+            ax.quiver(u, v, du, dv, color='royalblue', alpha=0.8, 
+                      scale_units='xy', scale=0.2, width=0.002, headwidth=3)
+
+            ax.set_title(title, fontsize=13, fontweight='bold')
+            ax.set_aspect('equal')
+            ax.invert_yaxis()
+            ax.set_xlim(0, self.width)
+            ax.set_ylim(self.height, 0)
+            ax.grid(True, linestyle=':', alpha=0.5)
+
+        # --- Bloco de Texto (Dados da Calibração) ---
+        ax_txt = fig.add_subplot(gs[1, :])
+        ax_txt.axis('off')
+        
+        p = self.camera_params[camera_to_show]
+        base = np.linalg.norm(self.camera_params['stereo']['T'])
+        R = self.camera_params['stereo']['R']
+        sy = np.sqrt(R[0,0]**2 + R[1,0]**2)
+        yaw = np.degrees(np.arctan2(-R[2,0], sy))
+        calib_info = (
+            f"CAMERA: {camera_to_show.upper()}\n"
+            f"Focal Length: ({p['kk'][0,0]:.2f}, {p['kk'][1,1]:.2f})\n"
+            f"Principal Point: ({p['kk'][0,2]:.2f}, {p['kk'][1,2]:.2f})\n"
+            f"Radial Coeffs: ({p['kc'][0]:.4f}, {p['kc'][1]:.4f}, {p['kc'][4]:.4f})\n"
+            f"Tangential: ({p['kc'][2]:.6f}, {p['kc'][3]:.6f})\n"
+            f"Stereo Baseline: {base:.4f} mm\n"
+            f"Angle: {yaw:.3f}°"
+        )
+        
+        ax_txt.text(0.5, 0.5, calib_info, family='monospace', fontsize=11,
+                    ha='left', va='center_baseline', linespacing=1.5,
+                    bbox=dict(boxstyle='round,pad=1', facecolor='#f9f9f9', edgecolor='gray'))
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.show()
+# Exemplo de uso
+# vis = DistortionVisualizer("stereo_calibration.yaml")
+# vis.plot_distortion_comparison_like_reference(save_path="advanced_calibration_visual.png")
 
 # Example Usage
 # vis = DistortionVisualizer("calibration.yaml")
@@ -155,18 +266,15 @@ def main():
 
     calib_uw = "camera_parameters/20260313_uw_P_d2_calib.yaml"  # Path to your calibration YAML file
     calib_lab = "camera_parameters/20260206_binning.yaml"  # Path to your calibration YAML file
-    visualizer_uw = DistortionVisualizer(calib_uw)
-    visualizer_lab = DistortionVisualizer(calib_lab)
+    visualizer_uw = DistortionVisualizer(calib_uw, resolution=(1224, 1024))
+    visualizer_lab = DistortionVisualizer(calib_lab, resolution=(1224, 1024))
     print("Lab calib distortion coefficients:", visualizer_lab.camera_params['left']['kc'])
     print("UW calib distortion coefficients:", visualizer_uw.camera_params['left']['kc'])
 
     # Plot and save radial distortion visualization
-    visualizer_uw.plot_distortion(mode='radial', save_path='radial_{}.png'.format(calib_uw.split('/')[-1].split('.')[0]))
-    visualizer_uw.plot_distortion(mode='tangential', save_path='tangential_{}.png'.format(calib_uw.split('/')[-1].split('.')[0]))
-    # visualizer_lab.plot_distortion(mode='radial', save_path='radial_{}.png'.format(calib_lab.split('/')[-1].split('.')[0]))
-    # visualizer_lab.plot_distortion(mode='tangential', save_path='tangential_{}.png'.format(calib_lab.split('/')[-1].split('.')[0]))
-
-    # Plot and save tangential distortion visualization
-
+    visualizer_lab.plot_stereo_report(camera_to_show='left', save_path='left_{}.png'.format(calib_lab.split('/')[-1].split('.')[0]))
+    visualizer_lab.plot_stereo_report(camera_to_show='right', save_path='right_{}.png'.format(calib_lab.split('/')[-1].split('.')[0]))
+    visualizer_uw.plot_stereo_report(camera_to_show='left', save_path='left_{}.png'.format(calib_uw.split('/')[-1].split('.')[0]))
+    visualizer_uw.plot_stereo_report(camera_to_show='right', save_path='right_{}.png'.format(calib_uw.split('/')[-1].split('.')[0]))
 if __name__ == "__main__":
     main()
