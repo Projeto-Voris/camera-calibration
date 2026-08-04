@@ -237,7 +237,7 @@ class DistortionVisualizer:
         sy = np.sqrt(R[0,0]**2 + R[1,0]**2)
         yaw = np.degrees(np.arctan2(-R[2,0], sy))
         calib_info = (
-            f"CAMERA: {camera_to_show.upper()}\n"
+            f"CAMERA: {save_path.split('/')[-1].split('.')[0] if save_path else camera_to_show.upper()}\n"
             f"Focal Length: ({p['kk'][0,0]:.2f}, {p['kk'][1,1]:.2f})\n"
             f"Principal Point: ({p['kk'][0,2]:.2f}, {p['kk'][1,2]:.2f})\n"
             f"Radial Coeffs: ({p['kc'][0]:.4f}, {p['kc'][1]:.4f}, {p['kc'][4]:.4f})\n"
@@ -264,17 +264,17 @@ class DistortionVisualizer:
 
 def main():
 
-    calib_uw = "camera_parameters/20260313_uw_P_d2_calib.yaml"  # Path to your calibration YAML file
-    calib_lab = "camera_parameters/20260206_binning.yaml"  # Path to your calibration YAML file
-    visualizer_uw = DistortionVisualizer(calib_uw, resolution=(1224, 1024))
-    visualizer_lab = DistortionVisualizer(calib_lab, resolution=(1224, 1024))
+    calib_uw = "20260528_water.yaml"  # Path to your calibration YAML file
+    calib_lab = "20260528_ar.yaml"  # Path to your calibration YAML file
+    visualizer_uw = DistortionVisualizer(calib_uw, resolution=(2448, 2048))
+    visualizer_lab = DistortionVisualizer(calib_lab, resolution=(2448, 2048))
     print("Lab calib distortion coefficients:", visualizer_lab.camera_params['left']['kc'])
     print("UW calib distortion coefficients:", visualizer_uw.camera_params['left']['kc'])
 
     # Plot and save radial distortion visualization
-    visualizer_lab.plot_stereo_report(camera_to_show='left', save_path='left_{}.png'.format(calib_lab.split('/')[-1].split('.')[0]))
-    visualizer_lab.plot_stereo_report(camera_to_show='right', save_path='right_{}.png'.format(calib_lab.split('/')[-1].split('.')[0]))
-    visualizer_uw.plot_stereo_report(camera_to_show='left', save_path='left_{}.png'.format(calib_uw.split('/')[-1].split('.')[0]))
-    visualizer_uw.plot_stereo_report(camera_to_show='right', save_path='right_{}.png'.format(calib_uw.split('/')[-1].split('.')[0]))
+    visualizer_lab.plot_stereo_report(camera_to_show='left', save_path='output/left_{}.png'.format(calib_lab.split('/')[-1].split('.')[0]))
+    visualizer_lab.plot_stereo_report(camera_to_show='right', save_path='output/right_{}.png'.format(calib_lab.split('/')[-1].split('.')[0]))
+    visualizer_uw.plot_stereo_report(camera_to_show='left', save_path='output/left_{}.png'.format(calib_uw.split('/')[-1].split('.')[0]))
+    visualizer_uw.plot_stereo_report(camera_to_show='right', save_path='output/right_{}.png'.format(calib_uw.split('/')[-1].split('.')[0]))
 if __name__ == "__main__":
     main()

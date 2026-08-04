@@ -576,14 +576,14 @@ if __name__ == '__main__':
     #     quit()
     #
     # Open and parse the settings file
-    parse_calibration_settings_file('calibration_settings.yaml')
+    parse_calibration_settings_file('cfg/calibration_settings.yaml')
 
 
     # """Step1. Save calibration frames for single cameras"""
     # save_frames_single_camera('camera0') #save frames for camera0
     # save_frames_single_camera('camera1') #save frames for camera1
 
-    path_abs = '/home/daniel/Insync/daniel.regner@labmetro.ufsc.br/Google Drive - Shared drives/VORIS - Media 2/20250828 - Active stereo evaluation/calibração/20250828/'
+    path_abs = '/home/daniel/Pictures/20260528 - Calib sapiens AGUA/'
     # path_abs = 'calib_16_16_sm4/'
     """Step2. Obtain camera intrinsic matrices and save them"""
     #camera0 intrinsics

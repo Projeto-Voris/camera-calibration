@@ -94,11 +94,11 @@ def draw_rectification_lines(img, color=(0, 255, 0), n_lines=10):
     return img_color
 
 def main():
-    path = '/home/daniel/Documents/codes/camera-calibration/stereo_uw'
-    yaml_file = '/home/daniel/Documents/codes/camera-calibration/camera_parameters/20260313_uw_P_d2_calib.yaml'
+    path = '/home/daniel/Pictures/20260724 - Calib. stereo ROV'
+    yaml_file = os.path.join(path, '20260724_ROV.yaml')
     left_images = sorted(os.listdir(os.path.join(path, 'left')))
     right_images = sorted(os.listdir(os.path.join(path, 'right')))
-    alpha = 1 # value of rectify map (0 - used ROI that are similar, 1 - uses all image)
+    alpha = 0 # value of rectify map (0 - used ROI that are similar, 1 - uses all image)
 
     left_image = cv2.imread(os.path.join(path, 'left', left_images[0]), 0)
     right_image = cv2.imread(os.path.join(path, 'right', right_images[0]), 0)
