@@ -14,11 +14,18 @@ import yaml
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-from src.machbeth_generator import (
-    MACBETH_PATCHES,
-    get_cmyk_nominal_rgb_matrix,
-    get_standard_srgb_matrix,
-)
+if __package__:
+    from .macbeth_generator import (
+        MACBETH_PATCHES,
+        get_cmyk_nominal_rgb_matrix,
+        get_standard_srgb_matrix,
+    )
+else:
+    from macbeth_generator import (
+        MACBETH_PATCHES,
+        get_cmyk_nominal_rgb_matrix,
+        get_standard_srgb_matrix,
+    )
 
 
 def rgb_to_xyz(rgb: np.ndarray) -> np.ndarray:

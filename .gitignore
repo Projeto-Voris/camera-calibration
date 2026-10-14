@@ -1,7 +1,15 @@
 /images/
 /.venv/
+/venv/
+*/*.pyc
 /.idea/
 */__pycache__/
+/output/
+/tests/
 *.png
 *.pdf
 .vscode/
+**/patch_*.py
+**/tests_*.py
+**/fix_*.py
+**/__pycache__/*

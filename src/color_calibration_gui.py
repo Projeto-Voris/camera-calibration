@@ -21,6 +21,7 @@ Atalhos de teclado:
 """
 
 import os
+import json
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import List, Optional, Tuple, Dict
@@ -33,8 +34,12 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.patches as mpatches
 
-from src.machbeth_generator import MACBETH_PATCHES
-from src.color_calibration import ColorCalibration
+if __package__:
+    from .macbeth_generator import MACBETH_PATCHES
+    from .color_calibration import ColorCalibration
+else:
+    from macbeth_generator import MACBETH_PATCHES
+    from color_calibration import ColorCalibration
 
 
 # ─────────────────────────── colour helpers ───────────────────────────────────
@@ -52,6 +57,12 @@ def patch_reference_rgb(idx: int) -> Tuple[int, int, int]:
 
 def luminance(r, g, b) -> float:
     return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def enhance_dark_preview(image: np.ndarray, exposure: float = 0.0) -> np.ndarray:
+    """Brighten the display in stops without modifying calibration pixels."""
+    lut = np.clip(np.arange(256, dtype=np.float64) * 2.0 ** exposure, 0, 255).astype(np.uint8)
+    return cv2.LUT(image, lut)
 
 
 # ─────────────────────────── ImageCanvas ──────────────────────────────────────
@@ -173,8 +184,8 @@ class ImageCanvas(tk.Frame):
         if self._cv_image is None:
             return
         img_h, img_w = self._cv_image.shape[:2]
-        dw = int(img_w * self._zoom)
-        dh = int(img_h * self._zoom)
+        dw = max(1, int(img_w * self._zoom))
+        dh = max(1, int(img_h * self._zoom))
         rgb = cv2.cvtColor(self._cv_image, cv2.COLOR_BGR2RGB)
         pil = Image.fromarray(rgb).resize((dw, dh), Image.LANCZOS)
         self._tk_image = ImageTk.PhotoImage(pil)
@@ -272,6 +283,7 @@ class ImageCanvas(tk.Frame):
         w = min(w, img_w - x)
         h = min(h, img_h - y)
 
+        self._previous_roi = self._rois[self._active_patch]
         self._rois[self._active_patch] = (x, y, w, h)
         self._redraw_all_rois()
         self._on_roi_drawn(self._active_patch, x, y, w, h)
@@ -589,6 +601,10 @@ class ColorCalibrationApp(tk.Tk):
         self._calib: Optional[ColorCalibration] = None
         self._active_patch: int = 0
         self._undo_stack: List[Tuple[int, Optional[Tuple]]] = []  # (patch_idx, prev_roi)
+        self._camera = "Esquerda"
+        self._sessions = {}
+        self._camera_var = tk.StringVar(value=self._camera)
+        self._exposure = tk.DoubleVar(value=0.0)
         self._ccm_method = tk.StringVar(value="white_point_preserving")
 
         self._build_ui()
@@ -644,6 +660,20 @@ class ColorCalibrationApp(tk.Tk):
         tk.Button(toolbar, text="🔍+", command=lambda: self._img_canvas.zoom_in(),  **btn_cfg).pack(side=tk.RIGHT, padx=2)
         tk.Button(toolbar, text="🔍−", command=lambda: self._img_canvas.zoom_out(), **btn_cfg).pack(side=tk.RIGHT, padx=2)
         tk.Button(toolbar, text="⊡",   command=lambda: self._img_canvas.zoom_fit(), **btn_cfg).pack(side=tk.RIGHT, padx=2)
+
+        controls = tk.Frame(self, bg="#3c3c3c")
+        controls.pack(fill=tk.X)
+        tk.Button(controls, text="Abrir par estéreo", command=self._open_stereo).pack(side=tk.LEFT, padx=4)
+        camera_menu = ttk.Combobox(controls, textvariable=self._camera_var,
+                                  values=["Esquerda", "Direita"], state="readonly", width=12)
+        camera_menu.pack(side=tk.LEFT, padx=4)
+        camera_menu.bind("<<ComboboxSelected>>", lambda e: self._switch_camera())
+        tk.Label(controls, text="Luz da prévia (EV):", bg="#3c3c3c", fg="white").pack(side=tk.LEFT)
+        tk.Scale(controls, from_=0, to=5, resolution=0.1, orient=tk.HORIZONTAL,
+                 variable=self._exposure, command=lambda value: self._refresh_preview(),
+                 length=180).pack(side=tk.LEFT)
+        tk.Label(controls, text="Calibração usa a imagem original. ≥8 patches por câmera.",
+                 bg="#3c3c3c", fg="#ccc").pack(side=tk.LEFT, padx=8)
 
         # ── main area: image + sidebar ────────────────────────────────────────
         main = tk.PanedWindow(self, orient=tk.HORIZONTAL, bg=self.BG_DARK,
@@ -749,21 +779,92 @@ class ColorCalibrationApp(tk.Tk):
         if img is None:
             messagebox.showerror("Erro", f"Não foi possível abrir a imagem:\n{path}")
             return
-        self._cv_image = img
-        self._image_path = path
-        self._img_canvas.load_image(img)
+        self._sessions = {}
+        self._load_camera(self._camera, path, img)
+
+    def _remember_camera(self):
+        if self._cv_image is not None:
+            self._sessions[self._camera] = dict(image=self._cv_image, path=self._image_path,
+                rois=self._img_canvas.get_rois(), undo=list(self._undo_stack),
+                calib=self._calib, exposure=self._exposure.get())
+
+    def _load_camera(self, camera, path, image):
+        self._camera = camera
+        self._camera_var.set(camera)
+        self._cv_image, self._image_path = image, path
         self._calib = None
-        self._undo_stack.clear()
-        self._btn_save.config(state=tk.DISABLED)
-        self.title(f"Calibração de Cor Macbeth — {os.path.basename(path)}")
+        self._undo_stack = []
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        level = float(np.percentile(gray, 90))
+        self._exposure.set(min(5.0, max(0.0, np.log2(160.0 / max(level, 1.0)))))
+        self._img_canvas.load_image(enhance_dark_preview(image, self._exposure.get()))
+        self._patch_list.update_status([None] * 24)
+        self._sidebar_nb.select(0)
         self._select_patch(0)
+        self._remember_camera()
         self._update_status()
-        self._status_var.set(f"Imagem carregada: {os.path.basename(path)}")
+
+    def _open_stereo(self):
+        pair = []
+        for camera in ("Esquerda", "Direita"):
+            path = filedialog.askopenfilename(title=f"Imagem da câmera {camera}",
+                filetypes=[("Imagens", "*.png *.jpg *.jpeg *.bmp *.tiff *.tif")])
+            if not path:
+                return
+            image = cv2.imread(path)
+            if image is None:
+                messagebox.showerror("Erro", f"Não foi possível abrir: {path}")
+                return
+            pair.append((camera, path, image))
+        self._sessions = {}
+        for camera, path, image in pair:
+            self._load_camera(camera, path, image)
+        self._camera_var.set("Esquerda")
+        self._switch_camera()
+
+    def _switch_camera(self):
+        target = self._camera_var.get()
+        if target == self._camera:
+            return
+        self._remember_camera()
+        if target not in self._sessions:
+            self._camera_var.set(self._camera)
+            messagebox.showinfo("Câmera", "Use Abrir par estéreo para carregar as duas câmeras.")
+            return
+        state = self._sessions[target]
+        self._camera = target
+        self._cv_image, self._image_path = state["image"], state["path"]
+        self._calib, self._undo_stack = state["calib"], list(state["undo"])
+        self._exposure.set(state["exposure"])
+        self._img_canvas.load_image(enhance_dark_preview(self._cv_image, self._exposure.get()))
+        self._img_canvas._rois = list(state["rois"])
+        self._img_canvas._redraw_all_rois()
+        self._patch_list.update_status(state["rois"])
+        self._select_patch(0)
+        if self._calib is not None:
+            self._results_panel.show_results(self._calib)
+            self._ccm_panel.update(self._calib)
+        else:
+            self._sidebar_nb.select(0)
+        self._update_status()
+
+    def _refresh_preview(self):
+        if self._cv_image is not None:
+            self._img_canvas._cancel_draw()
+            self._img_canvas._cv_image = enhance_dark_preview(self._cv_image, self._exposure.get())
+            self._img_canvas._redraw_canvas()
+
+    def _invalidate_calibration(self):
+        self._calib = None
+        if self._camera in self._sessions:
+            self._sessions[self._camera]["calib"] = None
+        self._btn_save.config(state=tk.DISABLED)
 
     def _on_roi_drawn(self, patch_idx: int, x: int, y: int, w: int, h: int):
         """Called by ImageCanvas whenever a new box is drawn."""
+        self._invalidate_calibration()
         # push undo
-        old_roi = self._img_canvas.get_rois()[patch_idx]
+        old_roi = self._img_canvas._previous_roi
         self._undo_stack.append((patch_idx, old_roi))
 
         # update patch list status
@@ -820,6 +921,7 @@ class ColorCalibrationApp(tk.Tk):
         # all set — stay on current
 
     def _clear_current_roi(self):
+        self._invalidate_calibration()
         idx = self._active_patch
         old_roi = self._img_canvas.get_rois()[idx]
         self._undo_stack.append((idx, old_roi))
@@ -844,6 +946,7 @@ class ColorCalibrationApp(tk.Tk):
         if not self._undo_stack:
             self._status_var.set("Nada para desfazer.")
             return
+        self._invalidate_calibration()
         patch_idx, prev_roi = self._undo_stack.pop()
         self._img_canvas.set_roi(patch_idx, prev_roi)
         self._patch_list.update_status(self._img_canvas.get_rois())
@@ -854,34 +957,31 @@ class ColorCalibrationApp(tk.Tk):
         if self._cv_image is None:
             messagebox.showwarning("Aviso", "Carregue uma imagem primeiro.")
             return
-        rois = self._img_canvas.get_rois()
-        n_set = sum(1 for r in rois if r is not None)
-        if n_set < 8:
-            messagebox.showwarning(
-                "Patches insuficientes",
-                f"Apenas {n_set}/24 patches têm ROI definida.\n"
-                "Defina ao menos 8 patches para calibrar."
-            )
-            return
-
+        self._remember_camera()
+        for camera, state in self._sessions.items():
+            count = sum(r is not None for r in state["rois"])
+            if count < 8:
+                messagebox.showwarning("Patches insuficientes",
+                    f"{camera}: {count}/24 patches. Defina ao menos 8 patches por câmera.")
+                return
         self._status_var.set("Calculando CCM…")
         self.update_idletasks()
         try:
-            calib = ColorCalibration(target_type="standard_srgb")
-            calib.extract_patches_from_rois(self._cv_image, rois)
-            calib.solve_ccm(method=self._ccm_method.get())
-            self._calib = calib
-
-            self._results_panel.show_results(calib)
-            self._ccm_panel.update(calib)
-            self._sidebar_nb.select(1)  # switch to results tab
+            results = {}
+            for camera, state in self._sessions.items():
+                calib = ColorCalibration(target_type="standard_srgb")
+                calib.extract_patches_from_rois(state["image"], state["rois"])
+                calib.solve_ccm(method=self._ccm_method.get())
+                results[camera] = calib
+            for camera, calib in results.items():
+                self._sessions[camera]["calib"] = calib
+            self._calib = results[self._camera]
+            self._results_panel.show_results(self._calib)
+            self._ccm_panel.update(self._calib)
+            self._sidebar_nb.select(1)
             self._btn_save.config(state=tk.NORMAL)
-            metrics = calib.evaluate_metrics()
-            self._status_var.set(
-                f"Calibração concluída — {n_set}/24 patches usados.  "
-                f"RMSE: {metrics['rmse_before']:.1f}→{metrics['rmse_after']:.1f}  "
-                f"ΔE médio: {metrics['delta_e_mean_before']:.2f}→{metrics['delta_e_mean_after']:.2f}"
-            )
+            self._status_var.set("Calibração concluída: " + ", ".join(results) +
+                ". Troque a câmera para ver seus resultados.")
         except Exception as exc:
             messagebox.showerror("Erro na calibração", str(exc))
             self._status_var.set(f"Erro: {exc}")
@@ -891,29 +991,37 @@ class ColorCalibrationApp(tk.Tk):
             messagebox.showwarning("Aviso", "Execute a calibração antes de salvar.")
             return
 
-        base = os.path.splitext(os.path.basename(self._image_path))[0] if self._image_path else "macbeth"
+        self._remember_camera()
+        if any(state["calib"] is None for state in self._sessions.values()):
+            messagebox.showwarning("Aviso", "Calibre todas as câmeras antes de salvar.")
+            return
         out_dir = filedialog.askdirectory(title="Selecione o diretório de saída",
                                           initialdir=os.path.dirname(self._image_path) or ".")
         if not out_dir:
             return
-
-        yaml_path  = os.path.join(out_dir, f"{base}_flir_ccm.yaml")
-        plot_path  = os.path.join(out_dir, f"{base}_calibration_results.png")
-        spin_path  = os.path.join(out_dir, f"{base}_apply_flir_ccm.py")
-
         try:
-            self._calib.export_flir_yaml(yaml_path)
-            self._calib.plot_calibration_results(plot_path)
-            code = self._calib.generate_pyspin_snippet()
-            with open(spin_path, "w", encoding="utf-8") as f:
-                f.write(code)
-            messagebox.showinfo(
-                "Salvo com sucesso",
-                f"Arquivos salvos em:\n{out_dir}\n\n"
-                f"• {os.path.basename(yaml_path)}\n"
-                f"• {os.path.basename(plot_path)}\n"
-                f"• {os.path.basename(spin_path)}"
-            )
+            saved = []
+            stereo = len(self._sessions) == 2
+            if stereo:
+                yaml_name = "stereo_color_ccm.yaml"
+                with open(os.path.join(out_dir, yaml_name), "w", encoding="utf-8") as f:
+                    for camera, side in (("Esquerda", "left"), ("Direita", "right")):
+                        matrix = self._sessions[camera]["calib"].CCM
+                        values = np.asarray(matrix, dtype=float).reshape(9).tolist()
+                        f.write(f"color_ccm_{side}: {json.dumps(values, allow_nan=False)}\n")
+                saved.append(yaml_name)
+            for camera, state in self._sessions.items():
+                base = os.path.splitext(os.path.basename(state["path"]))[0]
+                if len(self._sessions) == 2:
+                    base += "_left" if camera == "Esquerda" else "_right"
+                calib = state["calib"]
+                if not stereo:
+                    calib.export_flir_yaml(os.path.join(out_dir, f"{base}_flir_ccm.yaml"))
+                calib.plot_calibration_results(os.path.join(out_dir, f"{base}_calibration_results.png"))
+                with open(os.path.join(out_dir, f"{base}_apply_flir_ccm.py"), "w", encoding="utf-8") as f:
+                    f.write(calib.generate_pyspin_snippet())
+                saved.append(base)
+            messagebox.showinfo("Salvo com sucesso", f"YAML, plot e script PySpin salvos em:\n{out_dir}\n" + "\n".join(saved))
             self._status_var.set(f"Resultados salvos em: {out_dir}")
         except Exception as exc:
             messagebox.showerror("Erro ao salvar", str(exc))
@@ -923,12 +1031,18 @@ class ColorCalibrationApp(tk.Tk):
     def _update_status(self):
         rois = self._img_canvas.get_rois()
         n_set = sum(1 for r in rois if r is not None)
-        self._btn_calibrate.config(state=tk.NORMAL if (n_set >= 8 and self._cv_image is not None) else tk.DISABLED)
+        self._remember_camera()
+        ready = bool(self._sessions) and all(sum(r is not None for r in state["rois"]) >= 8
+                                            for state in self._sessions.values())
+        self._btn_calibrate.config(state=tk.NORMAL if ready else tk.DISABLED)
+        self._btn_save.config(state=tk.NORMAL if self._sessions and all(
+            state["calib"] is not None for state in self._sessions.values()) else tk.DISABLED)
+        self.title(f"Calibração de Cor Macbeth — {self._camera} — {os.path.basename(self._image_path)}")
         if self._cv_image is not None:
             self._status_var.set(
-                f"{n_set}/24 patches definidos.  "
+                f"{self._camera}: {n_set}/24 patches definidos.  "
                 f"Patch ativo: {self._active_patch + 1} ({MACBETH_PATCHES[self._active_patch]['name']}).  "
-                f"{'Pronto para calibrar!' if n_set >= 8 else f'Defina mais {8 - n_set} patches para habilitar calibração.'}"
+                f"{'Pronto para calibrar!' if ready else 'Defina ≥8 patches em cada câmera.'}"
             )
 
 
