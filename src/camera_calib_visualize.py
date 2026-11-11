@@ -1,6 +1,12 @@
-import cv2
+import os
 import yaml
 import numpy as np
+import matplotlib
+
+# OpenCV's bundled Qt plugins can conflict with Matplotlib's Qt backend.
+# These plots use NumPy only; use Tk for desktop windows by default, while
+# allowing MPLBACKEND=Agg for rendering without a display.
+matplotlib.use(os.environ.get("MPLBACKEND", "TkAgg"))
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 

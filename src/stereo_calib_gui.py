@@ -1,15 +1,16 @@
 """
-calibration_gui_calib.py  —  src/
+stereo_calib_gui.py  —  src/
 ==================================
 Interactive PyQt5 GUI for stereo camera calibration:
   • Load ChArUco images, detect corners, initial calibration
   • Per-image reprojection error review; threshold filter; re-calibrate
+  • Interactive 3D visualization of the stereo cameras and calibration patterns
   • Stereo rectification preview with alpha slider (cv2.stereoRectify)
   • Export — Custom, ROS2 CameraInfo, passive stereo (metres), and ORB-SLAM3 YAML
 
 Launch:
-    python -m src.calibration_gui_calib          # from project root
-    from src.calibration_gui_calib import launch_calibration_gui; launch_calibration_gui()
+    python -m src.stereo_calib_gui              # from project root
+    from src.stereo_calib_gui import launch_calibration_gui; launch_calibration_gui()
 """
 
 from __future__ import annotations
@@ -39,8 +40,15 @@ from PyQt5.QtWidgets import (
 
 import matplotlib
 matplotlib.use("Qt5Agg")
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+from matplotlib.ticker import MaxNLocator
+
+try:
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
+except ImportError:
+    Line3DCollection = Poly3DCollection = None
 
 # ─── constants ────────────────────────────────────────────────────────────────
 THUMB = 100
@@ -221,6 +229,28 @@ def get_single_pts(board_type, c, i, board, squares, sq_len):
             return objp.reshape(-1, 3), imgp.reshape(-1, 2)
         return None, None
 
+
+def pattern_geometry(board_type, board, squares, sq_len):
+    """Return the board perimeter and line segments in calibration coordinates."""
+    cols, rows = squares
+    if board_type == "ArUco Grid":
+        markers = np.asarray(board.getObjPoints())
+        x0, y0, _ = markers.min(axis=(0, 1))
+        x1, y1, _ = markers.max(axis=(0, 1))
+        segments = np.stack((markers, np.roll(markers, -1, axis=1)), axis=2).reshape(-1, 2, 3)
+    else:
+        # Chessboard dimensions count inner corners, with the origin at the first one.
+        start = -1 if board_type == "Chessboard" else 0
+        xs = np.arange(start, cols + 1) * sq_len
+        ys = np.arange(start, rows + 1) * sq_len
+        x0, x1 = xs[0], xs[-1]
+        y0, y1 = ys[0], ys[-1]
+        segments = np.array([[(x, y0, 0), (x, y1, 0)] for x in xs[1:-1]] +
+                            [[(x0, y, 0), (x1, y, 0)] for y in ys[1:-1]]).reshape(-1, 2, 3)
+    outline = np.array([(x0, y0, 0), (x1, y0, 0), (x1, y1, 0), (x0, y1, 0)])
+    return outline, segments
+
+
 def get_stereo_pts(board_type, cl, il, cr, ir, board, squares, sq_len):
     if board_type == "Chessboard":
         cols, rows = squares
@@ -317,7 +347,7 @@ class CalibWorker(QThread):
     sig_error  = pyqtSignal(str)
 
     def __init__(self, sel_cl, sel_il, sel_cr, sel_ir,
-                 all_cl, all_il, all_cr, all_ir, img_size, state, parent=None):
+                 all_cl, all_il, all_cr, all_ir, img_size, state, pair_labels, parent=None):
         super().__init__(parent)
         self.sel_cl, self.sel_il = sel_cl, sel_il
         self.sel_cr, self.sel_ir = sel_cr, sel_ir
@@ -328,6 +358,7 @@ class CalibWorker(QThread):
         self.board = state.board
         self.squares = state.squares
         self.sq_len = state.sq_len
+        self.pair_labels = pair_labels
         
         # Keep track of prior intrinsics if we are re-calibrating
         self.Kl_guess = state.Kl.copy() if state.calibrated and state.Kl is not None else None
@@ -338,11 +369,13 @@ class CalibWorker(QThread):
     def _calib_single(self, clist, ilist, K_guess=None, D_guess=None):
         import cv2
         obj_pts, img_pts = [], []
-        for c, i in zip(clist, ilist):
+        fitted = []
+        for idx, (c, i) in enumerate(zip(clist, ilist)):
             o, p = get_single_pts(self.board_type, c, i, self.board, self.squares, self.sq_len)
             if o is not None and len(o) >= 4:
                 obj_pts.append(o.astype(np.float32))
                 img_pts.append(p.astype(np.float32))
+                fitted.append(idx)
         if not obj_pts:
             raise ValueError("No valid points for calibration")
             
@@ -355,18 +388,21 @@ class CalibWorker(QThread):
             K_in = None
             D_in = None
             
-        return cv2.calibrateCamera(obj_pts, img_pts, self.img_size, K_in, D_in, flags=flags)
+        result = cv2.calibrateCamera(obj_pts, img_pts, self.img_size, K_in, D_in, flags=flags)
+        return (*result, fitted)
 
     def run(self):
         try:
             res  = {}
 
             self.sig_status.emit("Calibrating left camera…")
-            rms_l, Kl, Dl, rvl, tvl = self._calib_single(self.sel_cl, self.sel_il, self.Kl_guess, self.Dl_guess)
+            rms_l, Kl, Dl, rvl, tvl, fitted_l = self._calib_single(
+                self.sel_cl, self.sel_il, self.Kl_guess, self.Dl_guess)
             res["left"] = {"K": Kl, "D": Dl, "rvecs": rvl, "tvecs": tvl, "rms": rms_l}
 
             self.sig_status.emit("Calibrating right camera…")
-            rms_r, Kr, Dr, rvr, tvr = self._calib_single(self.sel_cr, self.sel_ir, self.Kr_guess, self.Dr_guess)
+            rms_r, Kr, Dr, rvr, tvr, _ = self._calib_single(
+                self.sel_cr, self.sel_ir, self.Kr_guess, self.Dr_guess)
             res["right"] = {"K": Kr, "D": Dr, "rvecs": rvr, "tvecs": tvr, "rms": rms_r}
 
             self.sig_status.emit("Computing reprojection errors for all images…")
@@ -382,6 +418,13 @@ class CalibWorker(QThread):
                     flags=cv2.CALIB_FIX_INTRINSIC)
                 res["stereo"] = {"R": R, "T": T, "E": E, "F": F, "rms": rms_s}
 
+            outline, segments = pattern_geometry(self.board_type, self.board, self.squares, self.sq_len)
+            res["extrinsics"] = {
+                "outline": outline,
+                "segments": segments,
+                "poses": [(self.pair_labels[idx], cv2.Rodrigues(rv)[0], tv.reshape(3))
+                          for idx, rv, tv in zip(fitted_l, rvl, tvl)],
+            }
             self.sig_done.emit(res)
         except Exception:
             self.sig_error.emit(_tb.format_exc())
@@ -446,6 +489,7 @@ class CalibState:
         self.Kl = self.Dl = self.Kr = self.Dr = None
         self.rv_l = self.tv_l = self.rv_r = self.tv_r = None
         self.R = self.T = self.E = self.F = None
+        self.extrinsics = None
         self.errs_l: np.ndarray | None = None  # per detection pair
         self.errs_r: np.ndarray | None = None
         self.rms_l = self.rms_r = self.rms_s = None
@@ -509,10 +553,13 @@ class CalibState:
         self.rv_r, self.tv_r, self.rms_r = r["rvecs"], r["tvecs"], r["rms"]
         self.errs_l = res.get("errors_l")
         self.errs_r = res.get("errors_r")
+        self.extrinsics = res.get("extrinsics")
         if "stereo" in res:
             s = res["stereo"]
             self.R, self.T, self.E, self.F, self.rms_s = (
                 s["R"], s["T"], s["E"], s["F"], s["rms"])
+        else:
+            self.R = self.T = self.E = self.F = self.rms_s = None
         self.calibrated = True
         self.rectified  = False
 
@@ -750,11 +797,13 @@ class ImageReviewTab(QWidget):
         si_l = [self.state.det_il[i] for i in sel]
         sc_r = [self.state.det_cr[i] for i in sel]
         si_r = [self.state.det_ir[i] for i in sel]
+        originals = [self.state.det_orig[i] for i in sel]
+        pair_labels = [f"Pair {idx} — {self.state.names_l[idx]}" for idx in originals]
         self._wc = CalibWorker(
             sc_l, si_l, sc_r, si_r,
             self.state.det_cl, self.state.det_il,
             self.state.det_cr, self.state.det_ir,
-            self.state.img_size, self.state)
+            self.state.img_size, self.state, pair_labels)
         self._wc.sig_status.connect(self.lbl_prog.setText)
         self._wc.sig_done.connect(self._on_calib_done)
         self._wc.sig_error.connect(self._on_error)
@@ -1842,6 +1891,177 @@ class CLAHETab(QWidget):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Tab — 3D Extrinsics
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ExtrinsicsTab(QWidget):
+    LEFT_COLOR = "#2463b5"
+    RIGHT_COLOR = "#c45922"
+    BOARD_COLOR = "#16816c"
+
+    def __init__(self, state: CalibState):
+        super().__init__()
+        self.state = state
+
+        layout = QVBoxLayout(self)
+        if Line3DCollection is None:
+            message = QLabel("3D plotting requires matching Matplotlib and mplot3d versions.")
+            message.setAlignment(Qt.AlignCenter)
+            layout.addWidget(message)
+            return
+
+        self.view = QComboBox()
+        self.view.addItems(["Camera-centric", "Pattern-centric"])
+        self.pair = QComboBox()
+        self.pair.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.pair.setMinimumContentsLength(20)
+        self.summary = QLabel()
+
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("View"))
+        controls.addWidget(self.view)
+        controls.addSpacing(12)
+        controls.addWidget(QLabel("Highlight"))
+        controls.addWidget(self.pair, 1)
+        controls.addWidget(self.summary)
+
+        self.fig = Figure(layout="constrained")
+        self.canvas = FigureCanvas(self.fig)
+        self.toolbar = NavigationToolbar2QT(self.canvas, self)
+        self.ax = self.fig.add_subplot(projection="3d")
+
+        layout.addLayout(controls)
+        layout.addWidget(self.toolbar)
+        layout.addWidget(self.canvas, 1)
+
+        self.view.currentIndexChanged.connect(self._plot)
+        self.pair.currentIndexChanged.connect(self._highlight)
+        self.refresh()
+
+    def refresh(self):
+        if Line3DCollection is None:
+            return
+        self.pair.blockSignals(True)
+        self.pair.clear()
+        self.pair.addItem("All pairs")
+        data = self.state.extrinsics
+        if data:
+            self.pair.addItems([label for label, _, _ in data["poses"]])
+        self.pair.blockSignals(False)
+        self.view.setEnabled(bool(data))
+        self.pair.setEnabled(bool(data))
+        self._plot()
+
+    def _plot(self):
+        self.ax.clear()
+        self._pair_artists = []
+        self.toolbar.update()
+        data = self.state.extrinsics
+        if not data:
+            self.ax.set_axis_off()
+            self.ax.text2D(0.5, 0.5, "Run calibration to view camera and pattern poses.",
+                           transform=self.ax.transAxes, ha="center", va="center")
+            self.summary.clear()
+            self.canvas.draw_idle()
+            return
+
+        pattern_fixed = self.view.currentIndex() == 1
+        outline = data["outline"]
+        size = float(np.ptp(outline, axis=0).max())
+        # Frusta indicate orientation. Their size is chosen for readability.
+        frustum = size * 0.18 * np.array([
+            (0, 0, 0), (-0.65, -0.45, 1), (0.65, -0.45, 1),
+            (0.65, 0.45, 1), (-0.65, 0.45, 1),
+        ])
+
+        cameras = [(frustum, self.LEFT_COLOR)]
+        baseline = "Stereo pose unavailable"
+        if self.state.R is not None:
+            # stereoCalibrate gives X_right = R @ X_left + T.
+            right_in_left = (frustum - self.state.T.reshape(3)) @ self.state.R
+            cameras.append((right_in_left, self.RIGHT_COLOR))
+            baseline = f"Baseline {np.linalg.norm(self.state.T):.1f} mm"
+        count = len(data["poses"])
+        self.summary.setText(f"{count} fitted {'pair' if count == 1 else 'pairs'}  ·  {baseline}")
+
+        bounds = []
+        if pattern_fixed:
+            self._draw_board(outline, data["segments"])
+            bounds.append(outline)
+        else:
+            self._draw_rig(cameras)
+            bounds.extend(vertices for vertices, _ in cameras)
+
+        for _, rotation, translation in data["poses"]:
+            if pattern_fixed:
+                # Invert the board-to-left pose for both cameras.
+                rig = [((vertices - translation) @ rotation, color) for vertices, color in cameras]
+                self._pair_artists.append(self._draw_rig(rig))
+                bounds.extend(vertices for vertices, _ in rig)
+            else:
+                corners = outline @ rotation.T + translation
+                grid = data["segments"] @ rotation.T + translation
+                self._pair_artists.append(self._draw_board(corners, grid))
+                bounds.append(corners)
+
+        points = np.concatenate(bounds)
+        center = (points.min(axis=0) + points.max(axis=0)) / 2
+        span = np.maximum(np.ptp(points, axis=0), 0.35 * size) * 1.15
+        self.ax.set_xlim(center[0] - span[0] / 2, center[0] + span[0] / 2)
+        self.ax.set_ylim(center[1] + span[1] / 2, center[1] - span[1] / 2)
+        self.ax.set_zlim(center[2] - span[2] / 2, center[2] + span[2] / 2)
+        self.ax.set_box_aspect(span, zoom=1 if pattern_fixed else 1.15)
+        if pattern_fixed:
+            self.ax.view_init(elev=22, azim=-55, vertical_axis="y")
+        else:
+            # Start behind the cameras looking along +Z. A shallow tilt and
+            # yaw expose depth while keeping +X to the right and +Y down.
+            self.ax.view_init(elev=-16, azim=-14, vertical_axis="y")
+            self.ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+            self.ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
+        self.ax.set_axis_on()
+        self.ax.set(xlabel="X (mm)", ylabel="Y (mm)", zlabel="Z (mm)",
+                    title="Pattern coordinate frame" if pattern_fixed else "Left camera coordinate frame")
+
+        legend = [Line2D([], [], color=self.LEFT_COLOR, label="Left camera")]
+        if len(cameras) == 2:
+            legend.append(Line2D([], [], color=self.RIGHT_COLOR, label="Right camera"))
+        legend.append(Line2D([], [], color=self.BOARD_COLOR, label="Calibration pattern"))
+        self.ax.legend(handles=legend, loc="upper left")
+        self._highlight()
+
+    def _draw_board(self, outline, grid):
+        face = Poly3DCollection([outline], facecolor=self.BOARD_COLOR, alpha=0.14)
+        perimeter = np.stack((outline, np.roll(outline, -1, axis=0)), axis=1)
+        edges = Line3DCollection(np.concatenate((perimeter, grid)),
+                                 colors=self.BOARD_COLOR, linewidths=0.9, alpha=0.8)
+        self.ax.add_collection3d(face)
+        self.ax.add_collection3d(edges)
+        return [(face, 0.14), (edges, 0.8)]
+
+    def _draw_rig(self, cameras):
+        artists = []
+        for vertices, color in cameras:
+            edges = [(0, 1), (0, 2), (0, 3), (0, 4), (1, 2), (2, 3), (3, 4), (4, 1)]
+            camera = Line3DCollection(vertices[np.array(edges)], colors=color, linewidths=1.6)
+            self.ax.add_collection3d(camera)
+            artists.append((camera, 1.0))
+        if len(cameras) == 2:
+            centers = [vertices[0] for vertices, _ in cameras]
+            baseline = Line3DCollection([centers], colors="#65717d", linestyles="dashed")
+            self.ax.add_collection3d(baseline)
+            artists.append((baseline, 0.75))
+        return artists
+
+    def _highlight(self):
+        selected = self.pair.currentIndex() - 1
+        for idx, artists in enumerate(self._pair_artists):
+            for artist, opacity in artists:
+                artist.set_alpha(opacity if selected in (-1, idx) else 0.15 * opacity)
+        self.canvas.draw_idle()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Main window
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1861,6 +2081,7 @@ class CalibGUI(QMainWindow):
         self.t_distort = DistortionTab(state, self._status)
         self.t_hist    = HistogramTab(state, self._status)
         self.t_clahe   = CLAHETab(state, self._status)
+        self.t_extrinsics = ExtrinsicsTab(state)
 
         self._tabs.addTab(self.t_review,  "📷  Image Review")
         self._tabs.addTab(self.t_results, "📊  Results")
@@ -1869,6 +2090,7 @@ class CalibGUI(QMainWindow):
         self._tabs.addTab(self.t_distort, "🔍  Distortion")
         self._tabs.addTab(self.t_hist,    "📊  Histogram")
         self._tabs.addTab(self.t_clahe,   "🎨  CLAHE")
+        self._tabs.addTab(self.t_extrinsics, "3D Extrinsics")
 
         self.t_review.sig_calib_done.connect(self._on_calib_done)
         self._tabs.currentChanged.connect(self._on_tab)
@@ -1881,6 +2103,7 @@ class CalibGUI(QMainWindow):
         self.statusBar().showMessage(msg)
 
     def _on_calib_done(self):
+        self.t_extrinsics.refresh()
         self.t_results.refresh()
         self.t_export.refresh()
         self.t_hist.refresh()
